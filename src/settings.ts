@@ -5,12 +5,14 @@ import type { Env } from "./types";
  *       下载 / 分享 / OAuth / Turnstile 等高频路径都要调，
  *       白白多一次 D1 往返。
  *
- * 策略：isolate 内缓存 + TTL + updateSettings 主动失效。
- *       TTL 取 10 秒：既能把同一波/相邻几次请求（如后台连续切 Tab）合并掉，
- *       又足够短（管理员改完最多 10 秒全量生效，本 isolate 内立即生效）。
+ * 策略：isolate 内缓存 + 5 秒 TTL + updateSettings 主动失效。
+ *       5 秒足够短（管理员改完最多 5 秒全量生效），
+ *       又足够把同一波并发请求合并掉，D1 压力骤降。
  *       跨 isolate 不同步，靠 TTL 自愈（可接受，因为管理员不会每秒改设置）。
+ * ⚠️ 不要随意调大 TTL：settings 含 adminIps（IP 白名单）、2FA 等安全关键项，
+ *    跨 isolate 的失效延迟会同步放大（= 放宽 fail-open 窗口）。
  */
-const SETTINGS_CACHE_TTL_MS = 10_000; // 10 秒
+const SETTINGS_CACHE_TTL_MS = 5_000; // 5 秒
 let _cachedSettings: Settings | null = null;
 let _cachedAt = 0;
 
