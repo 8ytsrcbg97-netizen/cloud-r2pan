@@ -15,28 +15,36 @@ export function safeEqual(a: string, b: string): boolean {
   return diff === 0;
 }
 
-/** HMAC-SHA256，hex 编码 —— 公开分享令牌签名用（public.ts） */
-export async function hmacHex(secret: string, data: string): Promise<string> {
-  const key = await crypto.subtle.importKey(
+/**
+ * HMAC-SHA256 CryptoKey 缓存 —— hmacHex / hmacB64url 共用。
+ * crypto.subtle.importKey 是每次 HMAC 调用中最重的一步（会话校验、令牌签名都会用到），
+ * 同一 secret 下复用已导入的密钥，避免每个请求重复导入。
+ */
+let cachedHmacKeyPromise: Promise<CryptoKey> | null = null;
+let cachedHmacKeySecret = "";
+function getHmacKey(secret: string): Promise<CryptoKey> {
+  if (cachedHmacKeyPromise && cachedHmacKeySecret === secret) return cachedHmacKeyPromise;
+  cachedHmacKeySecret = secret;
+  cachedHmacKeyPromise = crypto.subtle.importKey(
     "raw",
     new TextEncoder().encode(secret),
     { name: "HMAC", hash: "SHA-256" },
     false,
     ["sign"]
   );
+  return cachedHmacKeyPromise;
+}
+
+/** HMAC-SHA256，hex 编码 —— 公开分享令牌签名用（public.ts） */
+export async function hmacHex(secret: string, data: string): Promise<string> {
+  const key = await getHmacKey(secret);
   const sig = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(data));
   return [...new Uint8Array(sig)].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
 /** HMAC-SHA256，base64url 编码 —— 管理后台会话签名用（auth.ts） */
 export async function hmacB64url(secret: string, data: string): Promise<string> {
-  const key = await crypto.subtle.importKey(
-    "raw",
-    new TextEncoder().encode(secret),
-    { name: "HMAC", hash: "SHA-256" },
-    false,
-    ["sign"]
-  );
+  const key = await getHmacKey(secret);
   const sig = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(data));
   let bin = "";
   for (const b of new Uint8Array(sig)) bin += String.fromCharCode(b);
