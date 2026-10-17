@@ -435,6 +435,10 @@ function fmtTime(ts){
 }
 function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 
+// 激活码绑定读写（localStorage）—— 顶层作用域，供 render / triggerDownload / wireUnlock 共用
+function getBoundCode(){ try { return localStorage.getItem('r2pan_code')?.trim().toUpperCase() || null; } catch { return null; } }
+function setBoundCode(c){ try { if(c) localStorage.setItem('r2pan_code', c.trim().toUpperCase()); else localStorage.removeItem('r2pan_code'); } catch {} }
+
 const token = location.pathname.split('/')[2];
 
 let TURSTILE_LOADED = false, turnstileReady = false, pendingCb = null;
@@ -652,9 +656,6 @@ function render(d, siteName, oauthErr, oauthProviders){
   if(d.needs_password && $('#pw')) wireUnlock(d, ts, tsEnabled, tsOnDownload, oauthEnabled, oauthAuthed, oauthProviders);
 
   // ═══════ 激活码浮动按钮 & 弹窗 ═══════
-  function getBoundCode(){ try { return localStorage.getItem('r2pan_code')?.trim().toUpperCase() || null; } catch { return null; } }
-  function setBoundCode(c){ try { if(c) localStorage.setItem('r2pan_code', c.trim().toUpperCase()); else localStorage.removeItem('r2pan_code'); } catch {} }
-
   // 更新浮动按钮上的绑定状态 badge
   function updateCodeFloatBadge(){
     const badge = document.getElementById('code-float-badge');
