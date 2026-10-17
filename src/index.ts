@@ -10,6 +10,7 @@ import {
   handleOAuthLogout,
   handleOAuthProviders,
 } from "./oauth_handlers";
+import { handleAdminGitHubStart, handleAdminGitHubCallback } from "./admin_oauth";
 import { findCodeByString, formatCodeStatus, checkCodeUsable, isCodeLenientFormat } from "./codes";
 
 /** 客户端真实 IP：从 CF 头或连接地址取 */
@@ -95,6 +96,16 @@ async function route(req: Request, env: Env, ctx: ExecutionContext): Promise<Res
   // 管理后台页面（/admin/apple 是隐藏的 Apple 玻璃风）
   if (path === "/admin" || path === "/admin/" || path.startsWith("/admin/apple")) {
     return serveAdminPage();
+  }
+
+  // 管理员 GitHub OAuth2 登录 / 绑定回调（与访客下载的 /oauth/* 独立）
+  if (path === "/admin/oauth/github/start" && req.method === "GET") {
+    await ensureSchema(env);
+    return handleAdminGitHubStart(req, env);
+  }
+  if (path === "/admin/oauth/callback" && req.method === "GET") {
+    await ensureSchema(env);
+    return handleAdminGitHubCallback(req, env);
   }
 
   // 管理 API
