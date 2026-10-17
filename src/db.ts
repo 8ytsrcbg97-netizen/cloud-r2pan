@@ -343,34 +343,18 @@ export async function getSchemaStatus(env: Env): Promise<SchemaStatus> {
     throw new Error("Database binding 'db' is not configured");
   }
 
-  // 1. 所有现有表
-  const tablesRes: any = await env.db.prepare(
-    "SELECT name FROM sqlite_master WHERE type='table'"
-  ).all();
-  const existingTables = new Set((tablesRes.results ?? []).map((r: any) => r.name));
+  // 1+2. 现有表名 + 关心的索引名 —— 合并为一次 batch（1 个 D1 往返，原为 2 次串行）
+  const meta: any[] = await env.db.batch<any>([
+    env.db.prepare("SELECT name FROM sqlite_master WHERE type='table'"),
+    env.db.prepare("SELECT name FROM sqlite_master WHERE type='index' AND name LIKE 'idx_%'"),
+  ]);
+  const existingTables = new Set((meta[0]?.results ?? []).map((r: any) => r.name));
   const missingTables = EXPECTED_TABLES.filter((t) => !existingTables.has(t));
 
-  // 2. 所有现有索引名（只取我们关心的，避免系统索引干扰）
-  const idxRes: any = await env.db.prepare(
-    "SELECT name FROM sqlite_master WHERE type='index' AND name LIKE 'idx_%'"
-  ).all();
-  const existingIndexes = new Set((idxRes.results ?? []).map((r: any) => r.name));
+  const existingIndexes = new Set((meta[1]?.results ?? []).map((r: any) => r.name));
   const missingIndexes = EXPECTED_INDEXES.filter((i) => !existingIndexes.has(i));
 
-  // 3. 逐表检查缺失的列
-  const missingColumns: { table: string; column: string }[] = [];
-  for (const { table, column } of EXPECTED_COLUMNS) {
-    if (!existingTables.has(table)) continue; // 表都没有了就不用查列了
-    try {
-      const colRes: any = await env.db.prepare(`PRAGMA table_info(${table})`).all();
-      const has = (colRes.results ?? []).some((c: any) => c.name === column);
-      if (!has) missingColumns.push({ table, column });
-    } catch {
-      /* 表不存在等情况，忽略 */
-    }
-  }
-
-  // 4. 迁移版本
+  // 3. 迁移版本（settings 表可能不存在，单独容错）
   let migrationCurrent = 0;
   try {
     const row: any = await env.db.prepare(
@@ -380,15 +364,47 @@ export async function getSchemaStatus(env: Env): Promise<SchemaStatus> {
   } catch { /* settings 表可能不存在 */ }
   const migrationTotal = MIGRATION_STATEMENTS.length;
 
-  // 5. 各表行数（限制 6 个主要表）
+  // 4+5. 列检查 + 各表行数 —— 合并为一次 batch（1 个 D1 往返，原为 ~23 次串行）
+  //      列检查按“去重后的表”执行 PRAGMA，避免同一张表查多次。
+  const colTables = [...new Set(EXPECTED_COLUMNS.map((c) => c.table))].filter((t) => existingTables.has(t));
+  const countTables = EXPECTED_TABLES.filter((t) => existingTables.has(t));
+  const missingColumns: { table: string; column: string }[] = [];
   const tableCounts: Record<string, number> = {};
-  for (const t of EXPECTED_TABLES) {
-    if (!existingTables.has(t)) continue;
-    try {
-      const r: any = await env.db.prepare(`SELECT COUNT(*) AS c FROM ${t}`).first();
-      tableCounts[t] = r?.c ?? 0;
-    } catch {
-      tableCounts[t] = -1; // 查询失败
+
+  try {
+    const stmts = [
+      ...colTables.map((t) => env.db.prepare(`PRAGMA table_info(${t})`)),
+      ...countTables.map((t) => env.db.prepare(`SELECT COUNT(*) AS c FROM ${t}`)),
+    ];
+    const res: any[] = stmts.length ? await env.db.batch<any>(stmts) : [];
+
+    const colsByTable = new Map<string, Set<string>>();
+    colTables.forEach((t, i) => {
+      colsByTable.set(t, new Set((res[i]?.results ?? []).map((c: any) => c.name)));
+    });
+    for (const { table, column } of EXPECTED_COLUMNS) {
+      if (!existingTables.has(table)) continue; // 表都没有了就不用查列了
+      if (!colsByTable.get(table)?.has(column)) missingColumns.push({ table, column });
+    }
+    countTables.forEach((t, i) => {
+      tableCounts[t] = res[colTables.length + i]?.results?.[0]?.c ?? 0;
+    });
+  } catch {
+    // 极端情况下 batch 失败 —— 回退到逐条查询，保证诊断功能仍可用
+    for (const { table, column } of EXPECTED_COLUMNS) {
+      if (!existingTables.has(table)) continue;
+      try {
+        const colRes: any = await env.db.prepare(`PRAGMA table_info(${table})`).all();
+        if (!(colRes.results ?? []).some((c: any) => c.name === column)) missingColumns.push({ table, column });
+      } catch { /* 忽略 */ }
+    }
+    for (const t of countTables) {
+      try {
+        const r: any = await env.db.prepare(`SELECT COUNT(*) AS c FROM ${t}`).first();
+        tableCounts[t] = r?.c ?? 0;
+      } catch {
+        tableCounts[t] = -1; // 查询失败
+      }
     }
   }
 

@@ -1597,7 +1597,9 @@ function showLogin(){
         shake();
       }
     };
-    $('#login-github').onclick = () => { location.href = '/admin/oauth/github/start'; };
+    // GitHub 按钮仅在启用时渲染，未启用时元素不存在，必须用可选链避免空引用报错
+    // （否则此处抛错会连带跳过下面 #login-lang 的绑定，导致登录页语言切换失效）
+    $('#login-github')?.addEventListener('click', () => { location.href = '/admin/oauth/github/start'; });
     $('#login-lang').onclick = toggleLang;
   } else if(loginStage === '2fa'){
     renderLoginCard(`
@@ -1723,10 +1725,11 @@ let currentTab = 'overview';
 let openGroup = 'overview'; // 当前展开的侧边栏分组
 let logsPage = 1, logsQuery = '';
 
-async function showApp(){
+async function showApp(prefetchedSession){
   loginStage = 'password'; savedLoginKey = '';
   try{
-    const s = await api('/api/admin/session');
+    // 复用启动时已拿到的 session（避免重复请求）；登录/2FA 成功后无缓存则自行拉取
+    const s = prefetchedSession || await api('/api/admin/session');
     siteTitle = s.site_title || siteTitle;
     // 隐藏路由：访问 /admin/apple 强制 Apple 玻璃风格（暗色紫蓝渐变）
     const path = location.pathname;
@@ -4042,15 +4045,16 @@ function showRecoveryCodes(codes){
 /* ═══════════ 启动 ═══════════ */
 (async () => {
   handleGitHubRedirectParams();
-  loadAuthMethods(); // 探测可用登录方式（GitHub），供登录页渲染，不阻塞主流程
   try{
+    // 只请求一次 session，并把结果透传给 showApp，避免 showApp 内部重复请求
     const s = await api('/api/admin/session');
     siteTitle = s.site_title || siteTitle;
-    showApp();
+    showApp(s);
   }catch{
-    // api() 内部已对 401 调用 showLogin() 并 throw，这里静默兜底即可
-    // 若 api() 因其他错误 throw，也不渲染空页面
+    // 未登录：api() 内部已对 401 调用 showLogin() 并 throw，这里静默兜底即可
     if (!document.querySelector('#login-view')) showLogin();
+    // 仅登录页需要探测可用登录方式（GitHub），已登录时无需这次请求
+    loadAuthMethods();
   }
 })();
 </script>
