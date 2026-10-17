@@ -10,9 +10,7 @@ compatibility_date = "2025-01-01"
 #   1. 你把 Secret 名字拼错了（大小写敏感）
 #   2. Secrets 配在了错误的环境（Production vs Preview）
 #   3. .dev.vars 被误提交到 git 并被 CI 用成了 secrets.toml 的来源
-"vars": {
-    "admin": "密码key"
-  },
+
 [[d1_databases]]
 binding = "db"
 database_name = "cloud-r2pan"
