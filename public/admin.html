@@ -741,6 +741,38 @@ const I18N = {
     secNoLogs: '还没有登录记录', secSearchPh: '搜索 IP / 浏览器 / 系统…',
     secFilterAll: '全部结果', secFilterSuccess: '仅成功', secFilterFail: '仅失败',
     secActionAll: '全部操作',
+    // 管理员 GitHub 登录方式
+    adminLoginMethod: '管理员登录方式',
+    adminLoginMethodD: '把 GitHub 账号绑定为管理员登录方式。绑定后，登录后台可直接用 GitHub 登录，无需输入管理密钥。',
+    ghConfigTitle: 'GitHub OAuth App 配置',
+    ghConfigD: '在 GitHub → Settings → Developer settings → OAuth Apps 新建一个 OAuth App，把下方的回调地址填入 Authorization callback URL。',
+    ghClientId: 'Client ID',
+    ghClientIdPh: 'GitHub OAuth App 的 Client ID',
+    ghClientSecret: 'Client Secret',
+    ghClientSecretPh: '输入后保存；留空则保留现有 Secret',
+    ghSecretConfigured: '已配置',
+    ghSecretNotConfigured: '未配置',
+    ghCallbackUrl: '回调地址 (Authorization callback URL)',
+    ghNotBound: '尚未绑定 GitHub 账号',
+    ghBoundAs: '已绑定',
+    ghBind: '绑定 GitHub',
+    ghUnbind: '解绑',
+    ghBindHint: '点击后跳转 GitHub 授权，完成后自动返回',
+    ghEnableLogin: '启用 GitHub 登录',
+    ghEnableLoginD: '开启后，登录页会显示「使用 GitHub 登录」按钮',
+    ghLoginDisabledHint: '需先绑定 GitHub 账号才能启用',
+    ghSave: '保存配置',
+    ghSaved: '配置已保存',
+    ghBoundOk: 'GitHub 账号绑定成功',
+    ghUnboundOk: '已解绑 GitHub 账号',
+    ghNeedConfig: '请先填写并保存 Client ID / Secret',
+    ghConfirmUnbindT: '解绑 GitHub 账号', ghConfirmUnbindD: '解绑后将无法使用 GitHub 登录，需重新绑定。确定解绑吗？',
+    ghLoginBtn: '使用 GitHub 登录',
+    ghLoginHint: '已绑定 GitHub 账号，可直接用 GitHub 登录',
+    ghErrNotAvailable: 'GitHub 登录当前不可用',
+    ghErrNotBound: '该 GitHub 账号不是已绑定的管理员账号',
+    ghErrGeneric: 'GitHub 登录失败，请重试',
+    ghBindSuccessMsg: 'GitHub 账号已绑定',
     // 2FA 登录
     login2faTitle: '两步验证',
     login2faSub: '请输入 Authenticator 应用中的 6 位验证码',
@@ -1101,6 +1133,38 @@ const I18N = {
     secNoLogs: 'No login logs yet', secSearchPh: 'Search IP / browser / OS…',
     secFilterAll: 'All', secFilterSuccess: 'Success only', secFilterFail: 'Fail only',
     secActionAll: 'All actions',
+    // Admin GitHub login
+    adminLoginMethod: 'Admin Login Methods',
+    adminLoginMethodD: 'Bind your GitHub account as an admin login method. Once bound, you can sign in to the console with GitHub — no admin key required.',
+    ghConfigTitle: 'GitHub OAuth App',
+    ghConfigD: 'Create an OAuth App under GitHub → Settings → Developer settings → OAuth Apps, and put the callback URL below into Authorization callback URL.',
+    ghClientId: 'Client ID',
+    ghClientIdPh: 'Client ID of your GitHub OAuth App',
+    ghClientSecret: 'Client Secret',
+    ghClientSecretPh: 'Enter to save; leave blank to keep the current secret',
+    ghSecretConfigured: 'Configured',
+    ghSecretNotConfigured: 'Not configured',
+    ghCallbackUrl: 'Authorization callback URL',
+    ghNotBound: 'No GitHub account bound yet',
+    ghBoundAs: 'Bound',
+    ghBind: 'Bind GitHub',
+    ghUnbind: 'Unbind',
+    ghBindHint: 'Redirects to GitHub for authorization, then returns automatically',
+    ghEnableLogin: 'Enable GitHub login',
+    ghEnableLoginD: 'Shows a “Sign in with GitHub” button on the login page',
+    ghLoginDisabledHint: 'Bind a GitHub account first to enable',
+    ghSave: 'Save',
+    ghSaved: 'Configuration saved',
+    ghBoundOk: 'GitHub account bound',
+    ghUnboundOk: 'GitHub account unbound',
+    ghNeedConfig: 'Save the Client ID / Secret first',
+    ghConfirmUnbindT: 'Unbind GitHub account', ghConfirmUnbindD: 'After unbinding you can no longer sign in with GitHub; you will need to bind again. Unbind now?',
+    ghLoginBtn: 'Sign in with GitHub',
+    ghLoginHint: 'GitHub account bound — you can sign in with GitHub',
+    ghErrNotAvailable: 'GitHub login is currently unavailable',
+    ghErrNotBound: 'This GitHub account is not the bound admin account',
+    ghErrGeneric: 'GitHub sign-in failed. Please try again.',
+    ghBindSuccessMsg: 'GitHub account bound',
     // 2FA login
     login2faTitle: 'Two-Factor Authentication',
     login2faSub: 'Enter the 6-digit code from your Authenticator app',
@@ -1463,6 +1527,31 @@ function closeModal(){ $('#modal')?.remove(); }
 let siteTitle = 'cloud-r2pan';
 let loginStage = 'password'; // 'password' | '2fa' | 'recovery'
 let savedLoginKey = ''; // 第一阶段输入的 admin key
+/** 可用登录方式（GitHub 等）—— 启动时探测，登录页据此渲染 */
+let authMethods = { github: { enabled: false, login: null } };
+
+async function loadAuthMethods(){
+  try{
+    const r = await fetch('/api/admin/auth-methods', { credentials:'same-origin', cache:'no-store' });
+    if(r.ok) authMethods = await r.json();
+  }catch{}
+  // 若当前正停在密码登录页，用最新结果重渲染一次
+  if(document.querySelector('#login-view') && loginStage === 'password') showLogin();
+}
+
+/** 处理 GitHub 登录/绑定回调带回的 query 参数提示 */
+function handleGitHubRedirectParams(){
+  const p = new URLSearchParams(location.search);
+  const err = p.get('github_error');
+  const ok = p.get('github');
+  if(!err && !ok) return;
+  if(err){
+    const map = { not_available: t('ghErrNotAvailable'), disabled: t('ghErrNotAvailable'), not_bound: t('ghErrNotBound') };
+    toast(map[err] || t('ghErrGeneric'), 'err');
+  }
+  if(ok === 'bound') toast(t('ghBoundOk'));
+  history.replaceState(null, '', location.pathname);
+}
 
 function showLogin(){
   document.title = t('docTitle', {site: siteTitle});
@@ -1476,6 +1565,17 @@ function showLogin(){
         <button class="btn primary" type="submit">${esc(t('login'))}</button>
         <div class="err" id="login-err"></div>
       </form>
+      ${authMethods.github?.enabled ? `
+      <div style="margin-top:18px">
+        <div style="display:flex;align-items:center;gap:10px;color:var(--text-3);font-size:12px;margin-bottom:14px">
+          <span style="flex:1;height:1px;background:var(--stroke-strong)"></span>${esc(LANG==='zh'?'或':'OR')}<span style="flex:1;height:1px;background:var(--stroke-strong)"></span>
+        </div>
+        <a class="btn" id="login-github" href="javascript:void(0)" style="display:flex;align-items:center;justify-content:center;gap:10px">
+          <svg viewBox="0 0 24 24" width="19" height="19" fill="currentColor"><path d="M12 .5C5.73.5.75 5.48.75 11.75c0 4.97 3.22 9.19 7.69 10.68.56.1.77-.24.77-.54 0-.27-.01-1.16-.02-2.11-3.13.68-3.79-1.34-3.79-1.34-.51-1.3-1.25-1.64-1.25-1.64-1.02-.7.08-.68.08-.68 1.13.08 1.72 1.16 1.72 1.16 1 1.71 2.63 1.22 3.27.93.1-.73.39-1.22.71-1.5-2.5-.28-5.13-1.25-5.13-5.57 0-1.23.44-2.24 1.16-3.03-.12-.28-.5-1.43.11-2.99 0 0 .95-.3 3.11 1.15.9-.25 1.87-.37 2.83-.37.96 0 1.93.12 2.83.37 2.16-1.45 3.11-1.15 3.11-1.15.61 1.56.23 2.71.11 2.99.72.79 1.16 1.8 1.16 3.03 0 4.33-2.64 5.28-5.14 5.56.4.34.76 1.02.76 2.07 0 1.5-.01 2.71-.01 3.08 0 .3.21.65.78.54 4.46-1.49 7.68-5.71 7.68-10.68C23.25 5.48 18.27.5 12 .5z"/></svg>
+          ${esc(t('ghLoginBtn'))}
+        </a>
+        ${authMethods.github.login ? `<div class="sub" style="margin-top:10px;font-size:12px;color:var(--text-3)">${esc(t('ghLoginHint'))} · <b>@${esc(authMethods.github.login)}</b></div>` : ''}
+      </div>` : ''}
       <div class="lang-row"><button class="btn sm" id="login-lang">${esc(t('switchTo'))}</button></div>
     `);
     $('#login-form').onsubmit = async e => {
@@ -1497,6 +1597,7 @@ function showLogin(){
         shake();
       }
     };
+    $('#login-github').onclick = () => { location.href = '/admin/oauth/github/start'; };
     $('#login-lang').onclick = toggleLang;
   } else if(loginStage === '2fa'){
     renderLoginCard(`
@@ -2410,7 +2511,10 @@ let secPage = 1, secQuery = '', secAction = '', secResult = '';
 async function loadSecurity(){
   const q = encodeURIComponent(secQuery);
   const params = `page=${secPage}&per_page=20&q=${q}&action=${secAction}&result=${secResult}`;
-  const d = await api(`/api/admin/login-logs?${params}`);
+  const [d, gh] = await Promise.all([
+    api(`/api/admin/login-logs?${params}`),
+    api('/api/admin/oauth/github').catch(() => null),
+  ]);
 
   const actionMap = { login: t('actionLogin'), logout: t('actionLogout'), verify_fail: t('actionFail'), rate_limited: t('actionRateLimited') };
   const reasonMap = { invalid_key: t('secReasonInvalid'), rate_limited: t('secReasonRateLimited'), session_expired: t('secReasonSession') };
@@ -2446,6 +2550,69 @@ async function loadSecurity(){
         <button class="btn sm danger" id="sec-clear-all">${esc(t('secClearAll'))}</button>
       </div>
     </div>
+    ${gh ? `
+    <div class="glass section" style="margin-bottom:18px">
+      <div class="section-title">
+        <h2>🔗 ${esc(t('adminLoginMethod'))}</h2>
+        ${gh.bound
+          ? `<span class="tag active"><i></i>${esc(t('ghBoundAs'))} @${esc(gh.login || '')}</span>`
+          : `<span class="tag" style="background:var(--sf-input);color:#a5b4fc"><i></i>${esc(t('ghNotBound'))}</span>`}
+      </div>
+      <div class="sub" style="color:var(--text-2);font-size:13px;margin-bottom:16px;line-height:1.6">${esc(t('adminLoginMethodD'))}</div>
+
+      <h3 style="margin:0 0 4px;font-size:14.5px;font-weight:600">${esc(t('ghConfigTitle'))}</h3>
+      <div style="color:var(--text-3);font-size:12.5px;margin-bottom:14px;line-height:1.6">${esc(t('ghConfigD'))}</div>
+
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 0;border-bottom:1px solid var(--stroke);flex-wrap:wrap">
+        <div class="info" style="flex:1;min-width:120px"><div class="t" style="font-size:14px;font-weight:600">${esc(t('ghClientId'))}</div></div>
+        <input type="text" id="gh-client-id" value="${esc(gh.client_id || '')}" placeholder="${esc(t('ghClientIdPh'))}"
+          style="width:300px;max-width:100%;padding:9px 14px;border-radius:12px;background:var(--sf-input);border:1px solid var(--stroke-strong);color:var(--text);font-size:14px;font-family:ui-monospace,'SF Mono',monospace;outline:none">
+      </div>
+
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 0;border-bottom:1px solid var(--stroke);flex-wrap:wrap">
+        <div class="info" style="flex:1;min-width:120px">
+          <div class="t" style="font-size:14px;font-weight:600">${esc(t('ghClientSecret'))}</div>
+          <div class="d" style="margin-top:3px;font-size:12.5px">${gh.secret_configured ? '<span style="color:#16a34a">✓ ' + esc(t('ghSecretConfigured')) + '</span>' : '<span style="color:#d97706">⚠ ' + esc(t('ghSecretNotConfigured')) + '</span>'}</div>
+        </div>
+        <input type="password" id="gh-client-secret" value="" placeholder="${esc(t('ghClientSecretPh'))}"
+          style="width:300px;max-width:100%;padding:9px 14px;border-radius:12px;background:var(--sf-input);border:1px solid var(--stroke-strong);color:var(--text);font-size:14px;font-family:ui-monospace,'SF Mono',monospace;outline:none">
+      </div>
+
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 0;flex-wrap:wrap">
+        <div class="info" style="flex:1;min-width:120px"><div class="t" style="font-size:14px;font-weight:600">${esc(t('ghCallbackUrl'))}</div></div>
+        <div style="width:300px;max-width:100%;padding:9px 14px;border-radius:12px;background:var(--sf-soft);border:1px solid var(--stroke);color:var(--blue);font-size:12.5px;font-family:ui-monospace,'SF Mono',monospace;word-break:break-all;cursor:pointer" onclick="this.select()">${esc(gh.callback_url)}</div>
+      </div>
+
+      <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:14px">
+        <button class="btn primary" id="gh-save" style="padding:11px 24px;font-size:14px;border-radius:14px">${esc(t('ghSave'))}</button>
+      </div>
+
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding-top:16px;margin-top:14px;border-top:1px solid var(--stroke);flex-wrap:wrap">
+        <div style="display:flex;align-items:center;gap:12px;min-width:0;flex:1">
+          ${gh.bound && gh.avatar
+            ? `<img src="${esc(gh.avatar)}" alt="" style="width:40px;height:40px;border-radius:50%;flex:none;border:1px solid var(--stroke-strong)">`
+            : `<div style="width:40px;height:40px;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;background:var(--sf-input);font-size:20px">🐙</div>`}
+          <div style="min-width:0">
+            <div class="t" style="font-size:14px;font-weight:600">${gh.bound ? '@' + esc(gh.login || '') : esc(t('ghNotBound'))}</div>
+            <div class="d" style="margin-top:3px;font-size:12.5px;color:var(--text-3)">${gh.bound ? (gh.name ? esc(gh.name) : esc(t('ghBoundAs'))) : esc(t('ghBindHint'))}</div>
+          </div>
+        </div>
+        ${gh.bound
+          ? `<button class="btn danger" id="gh-unbind" style="flex:none">${esc(t('ghUnbind'))}</button>`
+          : `<button class="btn primary" id="gh-bind" style="flex:none" ${gh.ready ? '' : 'disabled title="' + esc(t('ghNeedConfig')) + '"'}>${esc(t('ghBind'))}</button>`}
+      </div>
+
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding-top:16px;margin-top:14px;border-top:1px solid var(--stroke)">
+        <div class="info" style="flex:1">
+          <div class="t" style="font-size:14px;font-weight:600">${esc(t('ghEnableLogin'))}</div>
+          <div class="d" style="margin-top:3px;font-size:12.5px;color:var(--text-3);line-height:1.6">${gh.bound ? esc(t('ghEnableLoginD')) : esc(t('ghLoginDisabledHint'))}</div>
+        </div>
+        <label class="switch" style="flex:none${gh.bound ? '' : ';opacity:.5;pointer-events:none'}">
+          <input type="checkbox" id="gh-enable" ${gh.enabled ? 'checked' : ''} ${gh.bound ? '' : 'disabled'}>
+          <span class="track"><span class="thumb"></span></span>
+        </label>
+      </div>
+    </div>` : ''}
     <div class="glass section">
       ${d.logs.length ? `
       <div style="overflow-x:auto"><table class="tbl">
@@ -2491,6 +2658,46 @@ async function loadSecurity(){
     const r = await api('/api/admin/login-logs?mode=all', { method:'DELETE' });
     toast(t('secClearedN', {n: r.deleted})); loadSecurity();
   };
+
+  // ── 管理员 GitHub 登录方式 ──
+  if(gh){
+    // 保存 OAuth App 配置（Secret 留空 = 保留现有值）
+    $('#gh-save')?.addEventListener('click', async () => {
+      const body = { client_id: $('#gh-client-id').value.trim() };
+      const sec = $('#gh-client-secret').value.trim();
+      if(sec) body.client_secret = sec;
+      try{
+        await api('/api/admin/oauth/github', { method:'PUT', body: JSON.stringify(body) });
+        toast(t('ghSaved')); loadSecurity();
+      }catch(e){ toast(e.message || t('ghErrGeneric'), 'err'); }
+    });
+    // 绑定 —— 跳转 GitHub 授权
+    $('#gh-bind')?.addEventListener('click', async () => {
+      try{
+        const r = await api('/api/admin/oauth/github/bind-start', { method:'POST' });
+        if(r.authorize_url) location.href = r.authorize_url;
+        else toast(t('ghNeedConfig'), 'err');
+      }catch(e){ toast(e.message || t('ghNeedConfig'), 'err'); }
+    });
+    // 解绑
+    $('#gh-unbind')?.addEventListener('click', async () => {
+      if(!(await confirmDialog(t('ghConfirmUnbindT'), t('ghConfirmUnbindD')))) return;
+      try{
+        await api('/api/admin/oauth/github/unbind', { method:'POST' });
+        toast(t('ghUnboundOk')); loadSecurity();
+      }catch(e){ toast(e.message || t('ghErrGeneric'), 'err'); }
+    });
+    // 启用/停用 GitHub 登录
+    $('#gh-enable')?.addEventListener('change', async (e) => {
+      try{
+        await api('/api/admin/oauth/github', { method:'PUT', body: JSON.stringify({ enabled: e.target.checked }) });
+        toast(t('ghSaved'));
+      }catch(err){
+        e.target.checked = !e.target.checked;
+        toast(err.message || t('ghLoginDisabledHint'), 'err');
+      }
+    });
+  }
 }
 
 /* ═══════════ 全球分布 —— ECharts 3D 地球仪 ═══════════ */
@@ -3834,6 +4041,8 @@ function showRecoveryCodes(codes){
 
 /* ═══════════ 启动 ═══════════ */
 (async () => {
+  handleGitHubRedirectParams();
+  loadAuthMethods(); // 探测可用登录方式（GitHub），供登录页渲染，不阻塞主流程
   try{
     const s = await api('/api/admin/session');
     siteTitle = s.site_title || siteTitle;

@@ -96,6 +96,24 @@ export interface Settings {
   /** 浮动按钮位置：top-right（右上）或 top-left（左上）。默认 top-right。 */
   codesFloatingButtonPosition: "top-right" | "top-left";
 
+  // ═══════ 管理员 GitHub OAuth2 登录 ═══════
+  /** 是否允许用 GitHub 账号登录管理后台（需先绑定 GitHub 且已配好 OAuth App）。 */
+  adminGhLoginEnabled: boolean;
+  /** GitHub OAuth App 的 Client ID（明文存，可公开） */
+  adminGhClientId: string;
+  /** GitHub OAuth App 的 Client Secret —— 用 admin AES-GCM 加密后存 */
+  adminGhClientSecretCipher: string | null;
+  /** 已绑定的 GitHub 用户 id（数字字符串），未绑定为 null */
+  adminGhUid: string | null;
+  /** 已绑定的 GitHub 用户名 (login) */
+  adminGhLogin: string | null;
+  /** 已绑定的 GitHub 显示名 */
+  adminGhName: string | null;
+  /** 已绑定的 GitHub 头像 URL */
+  adminGhAvatar: string | null;
+  /** 绑定时间戳（毫秒），未绑定为 null */
+  adminGhBoundAt: number | null;
+
   // ═══════ 存储后端（R2 / S3 兼容） ═══════
   /**
    * 存储后端选择：
@@ -171,6 +189,15 @@ export const DEFAULT_SETTINGS: Settings = {
   // 激活码浮动按钮
   codesFloatingButtonEnabled: true,
   codesFloatingButtonPosition: "top-right",
+  // 管理员 GitHub OAuth2 登录 —— 默认未配置、未绑定
+  adminGhLoginEnabled: false,
+  adminGhClientId: "",
+  adminGhClientSecretCipher: null,
+  adminGhUid: null,
+  adminGhLogin: null,
+  adminGhName: null,
+  adminGhAvatar: null,
+  adminGhBoundAt: null,
   // 存储后端 —— 默认 R2（向后兼容）
   storageProvider: "r2",
   s3Endpoint: null,
@@ -253,6 +280,15 @@ export async function getSettings(env: Env): Promise<Settings> {
     // 激活码浮动按钮
     codesFloatingButtonEnabled: map.get("codes_floating_button_enabled") !== "0", // 默认 true
     codesFloatingButtonPosition: (map.get("codes_floating_button_position") ?? DEFAULT_SETTINGS.codesFloatingButtonPosition) as Settings["codesFloatingButtonPosition"],
+    // 管理员 GitHub OAuth2 登录（空串一律归一化为 null，便于前端判空）
+    adminGhLoginEnabled: map.get("admin_gh_login_enabled") === "1",
+    adminGhClientId: map.get("admin_gh_client_id") ?? "",
+    adminGhClientSecretCipher: map.get("admin_gh_client_secret_cipher") || null,
+    adminGhUid: map.get("admin_gh_uid") || null,
+    adminGhLogin: map.get("admin_gh_login") || null,
+    adminGhName: map.get("admin_gh_name") || null,
+    adminGhAvatar: map.get("admin_gh_avatar") || null,
+    adminGhBoundAt: map.get("admin_gh_bound_at") ? Number(map.get("admin_gh_bound_at")) : null,
     // 存储后端
     storageProvider: (map.get("storage_provider") ?? "r2") as Settings["storageProvider"],
     s3Endpoint: map.get("s3_endpoint") ?? null,

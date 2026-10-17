@@ -8,6 +8,7 @@ import { hashPassword } from "./public";
 import { parseUA } from "./ua";
 import { encryptSecret, decryptSecret, totpGenerateSecret, totpVerify, totpUri, totpGenerateRecoveryCodes, sha256Hex, safeEqual } from "./crypto";
 import { createStorageProvider, type StorageProvider } from "./storage";
+import { buildAdminGitHubAuthorizeUrl, ADMIN_OAUTH_INTENT_BIND } from "./admin_oauth";
 
 /** 懒加载 StorageProvider —— 每次需要时从 settings 构造（settings 有 5s 缓存，成本低） */
 let _storagePromise: Promise<StorageProvider> | null = null;
@@ -213,6 +214,18 @@ export async function handleAdminApi(
     });
   }
 
+  // ── 登录方式探测（公开，无需会话）——
+  //    登录页据此决定是否显示「使用 GitHub 登录」按钮
+  if (path === "/api/admin/auth-methods" && method === "GET") {
+    const s = await getSettings(env);
+    return json({
+      github: {
+        enabled: s.adminGhLoginEnabled && !!s.adminGhUid && !!s.adminGhClientId && !!s.adminGhClientSecretCipher,
+        login: s.adminGhLogin,
+      },
+    });
+  }
+
   // ── 以下全部需要会话 ──────────────────────────────
   const unauthorized = await requireAuth(req, env);
   if (unauthorized) return unauthorized;
@@ -240,6 +253,73 @@ export async function handleAdminApi(
       recovery_remaining: s.totpRecoveryHash ? s.totpRecoveryHash.split(",").filter(Boolean).length : 0,
       ui_theme: s.uiTheme,
     });
+  }
+
+  // ══════════════════════════════════════════════════════════════
+  // 管理员 GitHub OAuth2 登录（安全中心）
+  //   GET    /api/admin/oauth/github              配置 + 绑定状态
+  //   PUT    /api/admin/oauth/github              保存 Client ID / Secret / 开关
+  //   POST   /api/admin/oauth/github/bind-start   生成绑定授权 URL
+  //   POST   /api/admin/oauth/github/unbind       解绑
+  // ══════════════════════════════════════════════════════════════
+  if (path === "/api/admin/oauth/github" && method === "GET") {
+    const s = await getSettings(env);
+    return json({
+      client_id: s.adminGhClientId,
+      secret_configured: !!s.adminGhClientSecretCipher,
+      enabled: s.adminGhLoginEnabled,
+      bound: !!s.adminGhUid,
+      login: s.adminGhLogin,
+      name: s.adminGhName,
+      avatar: s.adminGhAvatar,
+      bound_at: s.adminGhBoundAt,
+      callback_url: `${url.origin}/admin/oauth/callback`,
+      ready: !!s.adminGhClientId && !!s.adminGhClientSecretCipher,
+    });
+  }
+
+  if (path === "/api/admin/oauth/github" && method === "PUT") {
+    const body = await readJson<{ client_id?: string; client_secret?: string; enabled?: boolean }>(req);
+    const patch: Record<string, string> = {};
+    if (typeof body.client_id === "string") patch.admin_gh_client_id = body.client_id.trim();
+    if (typeof body.client_secret === "string") {
+      const raw = body.client_secret.trim();
+      if (raw === "") patch.admin_gh_client_secret_cipher = "";
+      else if (raw !== "__keep__") {
+        const cipher = await encryptSecret(raw, env.admin);
+        if (cipher) patch.admin_gh_client_secret_cipher = cipher;
+      }
+    }
+    if (typeof body.enabled === "boolean") {
+      // 未绑定 GitHub 时不允许开启登录，避免把自己锁在门外
+      const s = await getSettings(env);
+      if (body.enabled && !s.adminGhUid) return json({ error: msg(req, "请先绑定 GitHub 账号", "Bind a GitHub account first") }, 400);
+      patch.admin_gh_login_enabled = body.enabled ? "1" : "0";
+    }
+    await updateSettings(env, patch);
+    return json({ ok: true });
+  }
+
+  if (path === "/api/admin/oauth/github/bind-start" && method === "POST") {
+    const s = await getSettings(env);
+    if (!s.adminGhClientId || !s.adminGhClientSecretCipher) {
+      return json({ error: msg(req, "请先保存 GitHub OAuth App 配置", "Configure the GitHub OAuth App first") }, 400);
+    }
+    const authorizeUrl = await buildAdminGitHubAuthorizeUrl(env, req, ADMIN_OAUTH_INTENT_BIND);
+    if (!authorizeUrl) return json({ error: msg(req, "无法生成授权链接", "Cannot build authorize URL") }, 500);
+    return json({ ok: true, authorize_url: authorizeUrl });
+  }
+
+  if (path === "/api/admin/oauth/github/unbind" && method === "POST") {
+    await updateSettings(env, {
+      admin_gh_login_enabled: "0",
+      admin_gh_uid: "",
+      admin_gh_login: "",
+      admin_gh_name: "",
+      admin_gh_avatar: "",
+      admin_gh_bound_at: "",
+    });
+    return json({ ok: true });
   }
 
   // ── 概览统计 ──────────────────────────────────────
