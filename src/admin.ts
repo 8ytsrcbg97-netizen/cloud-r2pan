@@ -521,6 +521,7 @@ export async function handleAdminApi(
       file_id: string;
       expires_hours: number | null;
       max_downloads: number | null;
+      max_previews?: number | null;
       password: string | null;
       download_name?: string | null;
       is_market?: boolean;
@@ -534,6 +535,9 @@ export async function handleAdminApi(
       body.expires_hours && body.expires_hours > 0 ? Date.now() + body.expires_hours * 3600_000 : null;
     const maxDownloads =
       body.max_downloads && body.max_downloads > 0 ? Math.floor(body.max_downloads) : null;
+    // 预览次数上限：留空 / 0 = 用全局设置 preview_limit；>0 = 该分享专属值
+    const maxPreviews =
+      body.max_previews && body.max_previews > 0 ? Math.floor(body.max_previews) : null;
     const password =
       typeof body.password === "string" && body.password.trim() ? body.password.trim() : null;
     const passwordHash = password ? await hashPassword(password) : null;
@@ -548,10 +552,10 @@ export async function handleAdminApi(
       typeof body.market_desc === "string" && body.market_desc.trim() ? body.market_desc.trim() : null;
     const id = randomId(10);
     await env.db.prepare(
-      `INSERT INTO shares(id, file_id, created_at, expires_at, max_downloads, password_hash, password_cipher, download_name, is_market, market_title, market_desc)
-       VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)`
+      `INSERT INTO shares(id, file_id, created_at, expires_at, max_downloads, max_previews, password_hash, password_cipher, download_name, is_market, market_title, market_desc)
+       VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)`
     )
-      .bind(id, body.file_id, Date.now(), expiresAt, maxDownloads, passwordHash, passwordCipher, downloadName, isMarket, marketTitle, marketDesc)
+      .bind(id, body.file_id, Date.now(), expiresAt, maxDownloads, maxPreviews, passwordHash, passwordCipher, downloadName, isMarket, marketTitle, marketDesc)
       .run();
     return json({ ok: true, id, url: `/s/${id}` }, 201);
   }
@@ -559,7 +563,8 @@ export async function handleAdminApi(
   // ── 分享列表 ──────────────────────────────────────
   if (path === "/api/admin/shares" && method === "GET") {
     const { results } = await env.db.prepare(
-      `SELECT s.id, s.file_id, s.created_at, s.expires_at, s.max_downloads, s.download_count, s.revoked,
+      `SELECT s.id, s.file_id, s.created_at, s.expires_at, s.max_downloads, s.download_count,
+              s.max_previews, s.preview_count, s.revoked,
               s.password_hash, s.password_cipher, s.download_name,
               s.is_market, s.market_views, s.market_title, s.market_desc,
               f.name AS file_name, f.size AS file_size, f.mime AS file_mime
@@ -1105,6 +1110,7 @@ export async function handleAdminApi(
       site_title: s.siteTitle,
       traffic_limit_gb: s.trafficLimitBytes / 1024 ** 3,
       max_downloads_per_ip: s.maxDownloadsPerIp,
+      preview_limit: s.previewLimit,
       count_window_hours: s.countWindowHours,
       auto_ban: s.autoBan,
       ban_hours: s.banHours,
@@ -1173,6 +1179,8 @@ export async function handleAdminApi(
     if (gb !== null) patch.traffic_limit_bytes = String(Math.round(gb * 1024 ** 3));
     const perIp = num(body.max_downloads_per_ip);
     if (perIp !== null) patch.max_downloads_per_ip = String(Math.floor(perIp));
+    const previewLimit = num(body.preview_limit);
+    if (previewLimit !== null) patch.preview_limit = String(Math.floor(previewLimit));
     const window = num(body.count_window_hours);
     if (window !== null) patch.count_window_hours = String(Math.floor(window));
     const banHours = num(body.ban_hours);

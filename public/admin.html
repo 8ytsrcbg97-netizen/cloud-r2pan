@@ -670,6 +670,11 @@ const I18N = {
     downloadNameHint: '访客下载时看到的文件名，隐藏真实路径中的敏感信息。',
     maxDownloadsLabel: '下载次数上限（留空或 0 = 不限）', unlimitedPlaceholder: '不限',
     maxTip: '达到上限后链接自动失效。单 IP 重复下载限制由「设置」统一控制。',
+    maxPreviewsLabel: '在线预览次数上限（留空或 0 = 跟随全局）', maxPreviewsFollowPh: '跟随全局',
+    maxPreviewsTip: '独立于下载次数。达到上限后该分享自动停止在线预览，防止反复预览浪费流量。',
+    previewLimit: '在线预览次数上限', previewLimitD: '每个分享默认可在线预览的次数（默认 4）。设为 0 表示不限制；每个分享也可单独覆盖此值。',
+    colPreviews: '预览量',
+    showQr: '二维码', qrTitle: '扫码打开', qrHint: '用手机相机扫描二维码即可打开此链接', qrLoading: '生成中…', qrFail: '二维码生成失败',
     generate: '生成链接', shareCreated: '分享链接已创建 ✨', shareCreatedSub: '复制下面的链接发给需要的人',
     sharePageLink: '分享页（访客先看到密码/验证页）',
     directModalTitle: '创建直链', directModalSub: '生成一个拿了就能下的直链，无密码无界面',
@@ -1088,6 +1093,11 @@ const I18N = {
     downloadNameHint: 'The filename visitors see when they download. Useful for hiding sensitive info in original paths.',
     maxDownloadsLabel: 'Max downloads (empty or 0 = unlimited)', unlimitedPlaceholder: 'Unlimited',
     maxTip: 'The link expires when the cap is reached. Per-IP duplicate limits are controlled in Settings.',
+    maxPreviewsLabel: 'Online preview limit (empty or 0 = follow global)', maxPreviewsFollowPh: 'Follow global',
+    maxPreviewsTip: 'Independent of download count. Online preview stops automatically once the cap is reached, preventing wasted previews.',
+    previewLimit: 'Online preview limit', previewLimitD: 'Default number of online previews per share (default 4). Set 0 for unlimited; each share can also override this.',
+    colPreviews: 'Previews',
+    showQr: 'QR Code', qrTitle: 'Scan to open', qrHint: 'Scan the QR code with your phone camera to open this link', qrLoading: 'Generating…', qrFail: 'Failed to generate QR code',
     generate: 'Generate Link', shareCreated: 'Share link created ✨', shareCreatedSub: 'Copy the link below and share it',
     sharePageLink: 'Share page (visitors see password/verification first)',
     directModalTitle: 'Create Direct Link', directModalSub: 'Generate a bare link — no page, no password, just download',
@@ -1545,6 +1555,53 @@ function copyText(text){
   ta.value = text; document.body.appendChild(ta); ta.select();
   document.execCommand('copy'); ta.remove();
   return Promise.resolve(toast(t('copied')));
+}
+
+/* 二维码：懒加载 qrcode-generator，产出可直接塞进 <img> 的 data URL */
+let _qrLibPromise = null;
+function loadQrLib(){
+  if(window.qrcode) return Promise.resolve(window.qrcode);
+  if(_qrLibPromise) return _qrLibPromise;
+  _qrLibPromise = new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = 'https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js';
+    s.async = true;
+    s.onload = () => (window.qrcode ? resolve(window.qrcode) : reject(new Error('qrcode missing')));
+    s.onerror = () => reject(new Error('qrcode load failed'));
+    document.head.appendChild(s);
+  });
+  return _qrLibPromise;
+}
+async function qrDataUrl(text){
+  const qrcode = await loadQrLib();
+  const qr = qrcode(0, 'M');
+  qr.addData(text);
+  qr.make();
+  const svg = qr.createSvgTag({ cellSize: 4, margin: 2, scalable: true });
+  return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+}
+/** 打开一个二维码弹窗 */
+function openQrModal(url){
+  const full = /^https?:\/\//.test(url) ? url : location.origin + url;
+  openModal(`
+    <h3>${esc(t('qrTitle'))}</h3>
+    <div class="sub">${esc(t('qrHint'))}</div>
+    <div style="display:flex;flex-direction:column;align-items:center;gap:12px;margin-top:16px">
+      <div id="qr-holder" style="width:200px;height:200px;border-radius:16px;background:#fff;padding:10px;display:flex;align-items:center;justify-content:center">
+        <div style="color:#888;font-size:12px">${esc(t('qrLoading'))}</div>
+      </div>
+      <div style="font-size:12px;color:var(--text-2);word-break:break-all;text-align:center;font-family:ui-monospace,'SF Mono',monospace">${esc(full)}</div>
+    </div>
+    <div class="actions">
+      <button class="btn" data-copy="${esc(full)}">${esc(t('copy'))}</button>
+      <button class="btn primary" data-x>${esc(t('close'))}</button>
+    </div>`);
+  document.querySelectorAll('[data-copy]').forEach(b => b.onclick = () => copyText(b.dataset.copy));
+  $('[data-x]').onclick = closeModal;
+  qrDataUrl(full).then(src => {
+    const h = $('#qr-holder');
+    if(h) h.innerHTML = `<img src="${src}" alt="QR" style="width:100%;height:100%;border-radius:8px">`;
+  }).catch(() => { const h = $('#qr-holder'); if(h) h.innerHTML = `<div style="color:#c00;font-size:12px">${esc(t('qrFail'))}</div>`; });
 }
 
 const confirmDialog = (title, msg, danger=true) => new Promise(resolve => {
@@ -2306,6 +2363,11 @@ function openShareModal(fileId){
       <input type="number" id="sh-max" min="0" placeholder="${esc(t('unlimitedPlaceholder'))}">
       <div class="tip">${esc(t('maxTip'))}</div>
     </div>
+    <div class="field">
+      <label>${esc(t('maxPreviewsLabel'))}</label>
+      <input type="number" id="sh-maxpv" min="0" placeholder="${esc(t('maxPreviewsFollowPh'))}">
+      <div class="tip">${esc(t('maxPreviewsTip'))}</div>
+    </div>
     <div class="actions">
       <button class="btn" data-x>${esc(t('cancel'))}</button>
       <button class="btn primary" id="sh-create">${esc(t('generate'))}</button>
@@ -2314,10 +2376,11 @@ function openShareModal(fileId){
   $('#sh-create').onclick = async () => {
     const exp = Number($('#sh-exp').value) || null;
     const max = Number($('#sh-max').value) || null;
+    const maxpv = Number($('#sh-maxpv').value) || null;
     const password = $('#sh-pwd').value.trim() || null;
     const download_name = $('#sh-dlname').value.trim() || null;
     try{
-      const r = await api('/api/admin/shares', { method:'POST', body: JSON.stringify({ file_id: fileId, expires_hours: exp, max_downloads: max, password, download_name }) });
+      const r = await api('/api/admin/shares', { method:'POST', body: JSON.stringify({ file_id: fileId, expires_hours: exp, max_downloads: max, max_previews: maxpv, password, download_name }) });
       const url = location.origin + r.url;
       openModal(`
         <h3>${esc(t('shareCreated'))}</h3>
@@ -2334,9 +2397,11 @@ function openShareModal(fileId){
         </div>
         <div class="actions">
           <button class="btn" data-x>${esc(t('close'))}</button>
+          <button class="btn" data-qr="${esc(r.url)}">${esc(t('showQr'))}</button>
           <button class="btn primary" id="sh-open">${esc(t('preview'))}</button>
         </div>`);
       document.querySelectorAll('[data-copy]').forEach(b => b.onclick = () => copyText(b.dataset.copy));
+      document.querySelectorAll('[data-qr]').forEach(b => b.onclick = () => openQrModal(b.dataset.qr));
       $('[data-x]').onclick = closeModal;
       $('#sh-open').onclick = () => window.open(r.url, '_blank');
     }catch(e){ toast(e.message, 'err'); }
@@ -2577,7 +2642,7 @@ async function loadShares(){
         <button class="btn sm" id="cleanup-shares">${esc(t('cleanup'))}</button></div>
       ${shares.length ? `
       <div style="overflow-x:auto"><table class="tbl">
-        <thead><tr><th>${esc(t('colFile'))}</th><th>${esc(t('colLink'))}</th><th>${esc(t('passwordCol'))}</th><th>${esc(t('colDownloads'))} / ${esc(t('colExpires'))}</th><th>${esc(t('colCreated'))}</th><th>${esc(t('colExpires'))}</th><th>${esc(t('colStatus'))}</th><th style="width:80px">${esc(t('colActions'))}</th></tr></thead>
+        <thead><tr><th>${esc(t('colFile'))}</th><th>${esc(t('colLink'))}</th><th>${esc(t('passwordCol'))}</th><th>${esc(t('colDownloads'))} / ${esc(t('colExpires'))}</th><th>${esc(t('colPreviews'))}</th><th>${esc(t('colCreated'))}</th><th>${esc(t('colExpires'))}</th><th>${esc(t('colStatus'))}</th><th style="width:130px">${esc(t('colActions'))}</th></tr></thead>
         <tbody>${shares.map(s => {
           const pw = s.has_password ? (s.password_plain || '') : null;
           return `
@@ -2588,10 +2653,11 @@ async function loadShares(){
               <button class="btn sm" data-pw="${s.id}" data-val="${esc(pw)}" style="padding:2px 8px;font-size:11px;margin-left:4px">👁</button>
               <button class="btn sm" data-cpw="${esc(pw)}" style="padding:2px 8px;font-size:11px">📋</button>` : `<span style="color:var(--text-3)">—</span>`}</td>
             <td class="num">${s.download_count} / ${s.max_downloads ?? '∞'}</td>
+            <td class="num">${s.preview_count ?? 0} / ${s.max_previews ?? '∞'}</td>
             <td class="num">${fmtTime(s.created_at)}</td>
             <td class="num">${s.expires_at ? fmtTime(s.expires_at) : esc(t('forever'))}</td>
             <td><span class="tag ${s.status}"><i></i>${esc(t(STATUS_KEY[s.status]))}</span></td>
-            <td><button class="btn sm danger" data-rv="${s.id}">${esc(t('revoke'))}</button></td>
+            <td><button class="btn sm" data-qr="/s/${s.id}">QR</button> <button class="btn sm danger" data-rv="${s.id}">${esc(t('revoke'))}</button></td>
           </tr>`;
         }).join('')}
         </tbody>
@@ -2609,6 +2675,8 @@ async function loadShares(){
     toast(t('shareRevoked'));
     loadShares();
   });
+  // 二维码
+  $$('[data-qr]').forEach(b => b.onclick = () => openQrModal(b.dataset.qr));
   // 密码显示/隐藏
   $$('[data-pw]').forEach(b => {
     b.onclick = () => {
@@ -3881,6 +3949,12 @@ async function loadSettings(){
     </div>
     <div class="glass group">
       <div class="row">
+        <div class="info"><div class="t">👁️ ${esc(t('previewLimit'))}</div><div class="d">${esc(t('previewLimitD'))}</div></div>
+        <input type="number" id="st-preview-limit" min="0" value="${s.preview_limit ?? 4}">
+      </div>
+    </div>
+    <div class="glass group">
+      <div class="row">
         <div class="info"><div class="t">🔁 ${esc(t('perIp'))}</div>
         <div class="d">${esc(t('perIpD'))}</div></div>
         <input type="number" id="st-perip" min="0" value="${s.max_downloads_per_ip}">
@@ -4162,6 +4236,7 @@ async function loadSettings(){
     const body = {
       site_title: $('#st-title').value.trim(),
       traffic_limit_gb: Number($('#st-limit').value) || 0,
+      preview_limit: Number($('#st-preview-limit').value) || 0,
       max_downloads_per_ip: Number($('#st-perip').value) || 0,
       count_window_hours: Number($('#st-window').value) || 0,
       auto_ban: $('#st-autoban').checked,

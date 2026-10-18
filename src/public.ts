@@ -160,6 +160,66 @@ async function verifyShareToken(env: Env, token: string, query: string): Promise
   return safeEqual(t.slice(i + 1), want);
 }
 
+/* ═══════════ 在线预览 ═══════════
+ * 预览次数独立于下载次数（settings.previewLimit，默认 4）。
+ * 打开一次预览 = 计 1 次；预览原始流用短时 HMAC 令牌（pv）授权，避免被反复刷。
+ */
+
+/** 可预览类型 */
+export type PreviewKind = "image" | "video" | "audio" | "pdf" | "text" | "zip" | "none";
+
+const PREVIEW_IMAGE_EXT = ["png", "jpg", "jpeg", "gif", "webp", "bmp", "svg", "avif", "ico"];
+const PREVIEW_VIDEO_EXT = ["mp4", "webm", "mov", "m4v", "ogv", "mkv"];
+const PREVIEW_AUDIO_EXT = ["mp3", "wav", "ogg", "oga", "m4a", "aac", "flac", "opus"];
+const PREVIEW_TEXT_EXT = ["txt", "md", "markdown", "log", "csv", "tsv", "json", "xml", "yml", "yaml", "ini", "conf", "js", "ts", "css", "html", "htm", "svg"];
+const PREVIEW_ZIP_EXT = ["zip"];
+
+/**
+ * 判断文件的在线预览类型。
+ * 优先看扩展名（更可靠），MIME 作为兜底。
+ */
+export function previewKind(mime: string, name: string): PreviewKind {
+  const ext = (/\.([a-z0-9]+)$/i.exec(name || "")?.[1] || "").toLowerCase();
+  const m = (mime || "").toLowerCase();
+  if (PREVIEW_ZIP_EXT.includes(ext)) return "zip";
+  if (PREVIEW_IMAGE_EXT.includes(ext) || m.startsWith("image/")) return "image";
+  if (PREVIEW_VIDEO_EXT.includes(ext) || m.startsWith("video/")) return "video";
+  if (PREVIEW_AUDIO_EXT.includes(ext) || m.startsWith("audio/")) return "audio";
+  if (ext === "pdf" || m === "application/pdf") return "pdf";
+  if (PREVIEW_TEXT_EXT.includes(ext) || m.startsWith("text/") || m === "application/json") return "text";
+  return "none";
+}
+
+/** 计算某分享的预览上限与已用次数（limit<=0 表示不限） */
+function previewUsage(row: ShareWithFile, globalLimit: number): { limit: number; used: number; remaining: number; maxed: boolean } {
+  const used = row.preview_count ?? 0;
+  const limit = row.max_previews === null || row.max_previews === undefined ? globalLimit : row.max_previews;
+  const maxed = limit > 0 && used >= limit;
+  const remaining = limit > 0 ? Math.max(0, limit - used) : -1; // -1 = 不限
+  return { limit, used, remaining, maxed };
+}
+
+const PREVIEW_TOKEN_TTL_MS = 3600_000; // 预览令牌 1h
+
+/** 颁发预览专用令牌，命名空间与下载令牌隔离（pv:），防止互相冒用 */
+async function issuePreviewToken(env: Env, token: string): Promise<string> {
+  const exp = Date.now() + PREVIEW_TOKEN_TTL_MS;
+  const sig = await hmacHex(env.admin, `pv:${token}:${exp}`);
+  return `${exp}.${sig}`;
+}
+
+/** 校验预览令牌（?pv=） */
+async function verifyPreviewToken(env: Env, token: string, query: string): Promise<boolean> {
+  const t = new URLSearchParams(query).get("pv");
+  if (!t) return false;
+  const i = t.indexOf(".");
+  if (i < 0) return false;
+  const exp = Number(t.slice(0, i));
+  if (!Number.isFinite(exp) || exp < Date.now()) return false;
+  const want = await hmacHex(env.admin, `pv:${token}:${exp}`);
+  return safeEqual(t.slice(i + 1), want);
+}
+
 /** GET /s/:token —— 分享页元信息（供前端渲染） */
 export async function handleShareInfo(req: Request, env: Env, token: string): Promise<Response> {
   const row = await getShare(env, token);
@@ -233,12 +293,25 @@ export async function handleShareInfo(req: Request, env: Env, token: string): Pr
       enabled: settings.codesFloatingButtonEnabled,
       position: settings.codesFloatingButtonPosition,
     },
+    preview: (() => {
+      const kind = previewKind(row.mime, row.name);
+      const usage = previewUsage(row, settings.previewLimit);
+      return {
+        enabled: kind !== "none" && status === "ok",
+        kind,
+        limit: usage.limit,
+        used: usage.used,
+        remaining: usage.remaining,
+        maxed: usage.maxed,
+      };
+    })(),
   });
 }
 
 async function getShare(env: Env, token: string): Promise<ShareWithFile | null> {
   return await env.db.prepare(
-    `SELECT s.id, s.file_id, s.created_at, s.expires_at, s.max_downloads, s.download_count, s.revoked, s.password_hash,
+    `SELECT s.id, s.file_id, s.created_at, s.expires_at, s.max_downloads, s.download_count,
+            s.max_previews, s.preview_count, s.revoked, s.password_hash,
             s.download_name, f.key, f.name, f.size, f.mime
      FROM shares s JOIN files f ON f.id = s.file_id
      WHERE s.id = ?1`
@@ -637,4 +710,284 @@ async function streamFile(
   );
 
   return new Response(obj.body, { status: range ? 206 : 200, headers });
+}
+
+/* ════════════════════════════════════════════════════════════════════
+ * 在线预览端点
+ *   GET /s/:token/preview       —— 打开一次预览：门禁校验 + 预览次数原子自增，返回元信息与令牌化 URL
+ *   GET /s/:token/preview/raw   —— 内联流式返回原始文件（支持 Range，供图片/视频/音频/PDF/文本渲染）
+ *   GET /s/:token/preview/zip   —— 解析 ZIP 中央目录，返回压缩包内部文件结构
+ *
+ * 与下载完全独立：预览次数走 shares.preview_count / max_previews（默认取全局 previewLimit），
+ * 不写入 download_logs、不消耗下载次数；但会累计月度流量（带宽成本一致）。
+ * ════════════════════════════════════════════════════════════════════ */
+
+/** 读取存储对象的一段字节（用于解析 ZIP 中央目录）；失败返回 null */
+async function readRange(env: Env, key: string, offset: number, length: number): Promise<Uint8Array | null> {
+  try {
+    const st = await storage(env);
+    const obj = await st.get(key, { offset, length });
+    if (!obj) return null;
+    const buf = await new Response(obj.body).arrayBuffer();
+    return new Uint8Array(buf);
+  } catch {
+    return null;
+  }
+}
+
+interface ZipEntry {
+  name: string;
+  size: number;
+  compressed_size: number;
+  is_dir: boolean;
+}
+
+/** 解析 ZIP 内部结构（读取末尾 EOCD + 中央目录；支持 ZIP64 与分片读取） */
+async function parseZipEntries(env: Env, key: string, size: number): Promise<{ entries: ZipEntry[]; truncated: boolean } | { error: string }> {
+  const tailLen = Math.min(size, 22 + 65535);
+  const tailOffset = Math.max(0, size - tailLen);
+  const tail = await readRange(env, key, tailOffset, tailLen);
+  if (!tail) return { error: "read_error" };
+
+  // 从后往前定位 EOCD 签名 0x06054b50
+  let eocd = -1;
+  for (let i = tail.length - 22; i >= 0; i--) {
+    if (tail[i] === 0x50 && tail[i + 1] === 0x4b && tail[i + 2] === 0x05 && tail[i + 3] === 0x06) {
+      eocd = i;
+      break;
+    }
+  }
+  if (eocd < 0) return { error: "not_zip" };
+
+  const dv = new DataView(tail.buffer, tail.byteOffset, tail.byteLength);
+  let totalEntries = dv.getUint16(eocd + 10, true);
+  let cdSize = dv.getUint32(eocd + 12, true);
+  let cdOffset = dv.getUint32(eocd + 16, true);
+
+  // ZIP64：字段为占位符 0xFFFFFFFF / 0xFFFF 时，读 ZIP64 EOCD 记录
+  if (cdOffset === 0xFFFFFFFF || cdSize === 0xFFFFFFFF || totalEntries === 0xFFFF) {
+    const loc = eocd - 20;
+    if (loc >= 0 && tail[loc] === 0x50 && tail[loc + 1] === 0x4b && tail[loc + 2] === 0x06 && tail[loc + 3] === 0x07) {
+      const z64Rel = Number(dv.getBigUint64(loc + 8, true));
+      const z64 = await readRange(env, key, z64Rel, 56);
+      if (z64) {
+        const zdv = new DataView(z64.buffer, z64.byteOffset, z64.byteLength);
+        if (z64.byteLength >= 56 && zdv.getUint32(0, true) === 0x06064b50) {
+          totalEntries = Number(zdv.getBigUint64(32, true));
+          cdSize = Number(zdv.getBigUint64(40, true));
+          cdOffset = Number(zdv.getBigUint64(48, true));
+        }
+      }
+    }
+    if (cdOffset === 0xFFFFFFFF) return { error: "zip64_unsupported" };
+  }
+
+  // 读取中央目录（上限 2MB，超大目录只解析前一部分）
+  const MAX_CD = 2 * 1024 * 1024;
+  const cdReadLen = Math.min(cdSize, MAX_CD);
+  const truncated = cdSize > cdReadLen;
+  const cd = await readRange(env, key, cdOffset, cdReadLen);
+  if (!cd) return { error: "read_error" };
+
+  const cv = new DataView(cd.buffer, cd.byteOffset, cd.byteLength);
+  const entries: ZipEntry[] = [];
+  const MAX_ENTRIES = 800;
+  let p = 0;
+  while (p + 46 <= cd.byteLength) {
+    if (cv.getUint32(p, true) !== 0x02014b50) break; // 中央目录文件头签名
+    let compSize = cv.getUint32(p + 20, true);
+    let uncompSize = cv.getUint32(p + 24, true);
+    const nameLen = cv.getUint16(p + 28, true);
+    const extraLen = cv.getUint16(p + 30, true);
+    const commentLen = cv.getUint16(p + 32, true);
+    let name = "";
+    try {
+      name = new TextDecoder("utf-8").decode(cd.subarray(p + 46, p + 46 + nameLen));
+    } catch {
+      name = "";
+    }
+    // ZIP64 extra（id=0x0001）：size 字段为 0xFFFFFFFF 时从扩展区读取
+    if (uncompSize === 0xFFFFFFFF || compSize === 0xFFFFFFFF) {
+      let ep = p + 46 + nameLen;
+      const epEnd = ep + extraLen;
+      while (ep + 4 <= epEnd) {
+        const hid = cv.getUint16(ep, true);
+        const hsz = cv.getUint16(ep + 2, true);
+        if (hid === 0x0001) {
+          let q = ep + 4;
+          if (uncompSize === 0xFFFFFFFF && q + 8 <= ep + 4 + hsz) { uncompSize = Number(cv.getBigUint64(q, true)); q += 8; }
+          if (compSize === 0xFFFFFFFF && q + 8 <= ep + 4 + hsz) { compSize = Number(cv.getBigUint64(q, true)); q += 8; }
+          break;
+        }
+        ep += 4 + hsz;
+      }
+    }
+    entries.push({ name, size: uncompSize, compressed_size: compSize, is_dir: name.endsWith("/") });
+    if (entries.length >= MAX_ENTRIES) return { entries, truncated: true };
+    p += 46 + nameLen + extraLen + commentLen;
+  }
+  return { entries, truncated };
+}
+
+/**
+ * GET /s/:token/preview —— 打开预览（计 1 次）。
+ * 门禁与下载一致：撤销/过期/满额/密码/OAuth/Turnstile/流量限额/激活码。
+ * 成功后原子自增 preview_count，超限则拒绝（自动停止预览）。
+ */
+export async function handlePreviewOpen(req: Request, env: Env, token: string): Promise<Response> {
+  const settings = await getSettings(env);
+  const ip = clientIp(req);
+  const url = new URL(req.url);
+  const codeParam = (url.searchParams.get("code") || req.headers.get("x-activation-code") || "").trim().toUpperCase() || null;
+
+  const [row, codeRow] = await Promise.all([
+    getShare(env, token),
+    codeParam ? findCodeByString(env, codeParam) : Promise.resolve(null),
+  ]);
+
+  if (!row) return json({ ok: false, error: "not_found" }, { status: 404 });
+  if (row.revoked) return json({ ok: false, error: "gone" }, { status: 410 });
+  if (row.expires_at && row.expires_at < Date.now()) return json({ ok: false, error: "expired" }, { status: 410 });
+  if (row.max_downloads && row.download_count >= row.max_downloads) return json({ ok: false, error: "maxed" }, { status: 410 });
+
+  const kind = previewKind(row.mime, row.name);
+  if (kind === "none") return json({ ok: false, error: "not_previewable" }, { status: 415 });
+
+  // 访问密码：复用下载授权令牌 t（由 /verify 颁发）
+  if (row.password_hash && !(await verifyShareToken(env, token, url.search))) {
+    return json({ ok: false, error: "password_required" }, { status: 401 });
+  }
+
+  // OAuth2 登录校验
+  if (settings.oauthEnabled) {
+    const oauthResult = await verifyOAuthSession(env, req.headers.get("cookie"));
+    if (!oauthResult.ok) return json({ ok: false, error: "oauth_required" }, { status: 401 });
+  }
+
+  // Turnstile（on_download / both 模式需要 cf 令牌）
+  if (await isTurnstileEnabled(env, settings)) {
+    const mode = settings.turnstileMode;
+    if (mode === "on_download" || mode === "both") {
+      const tsToken = url.searchParams.get("cf");
+      if (!tsToken || !(await verifyTurnstileToken(env, settings, tsToken, ip))) {
+        return json({ ok: false, error: "turnstile_required" }, { status: 403 });
+      }
+    }
+  }
+
+  // 月度流量限额（白名单 IP / 有效激活码不受限）
+  {
+    const whitelisted = isAdminWhitelisted(ip, settings.adminIps);
+    const usingCode = !!codeRow && checkCodeUsable(codeRow as any).ok;
+    if (!whitelisted && !usingCode && settings.trafficLimitBytes > 0 && settings.trafficUsedBytes >= settings.trafficLimitBytes) {
+      return json({ ok: false, error: "traffic_exceeded" }, { status: 503 });
+    }
+  }
+
+  // 预览次数限制 —— 原子自增，超限即止（防止浪费）
+  const effLimit = row.max_previews === null || row.max_previews === undefined ? settings.previewLimit : row.max_previews;
+  if (effLimit > 0) {
+    const r = await env.db
+      .prepare("UPDATE shares SET preview_count = preview_count + 1 WHERE id = ?1 AND preview_count < ?2")
+      .bind(token, effLimit)
+      .run();
+    if ((r.meta.changes ?? 0) === 0) {
+      return json(
+        { ok: false, error: "preview_limit_reached", limit: effLimit, used: effLimit, remaining: 0 },
+        { status: 429 }
+      );
+    }
+  } else {
+    const r = await env.db.prepare("UPDATE shares SET preview_count = preview_count + 1 WHERE id = ?1").bind(token).run();
+    if ((r.meta.changes ?? 0) === 0) {
+      // 行已不存在 —— 极端并发下分享被删
+      return json({ ok: false, error: "not_found" }, { status: 404 });
+    }
+  }
+
+  const pv = await issuePreviewToken(env, token);
+  const usedAfter = (row.preview_count ?? 0) + 1;
+  const remaining = effLimit > 0 ? Math.max(0, effLimit - usedAfter) : -1;
+  const codeSuffix = codeParam ? `&code=${encodeURIComponent(codeParam)}` : "";
+  return json({
+    ok: true,
+    kind,
+    name: row.download_name || row.name,
+    size: row.size,
+    mime: row.mime,
+    limit: effLimit,
+    used: usedAfter,
+    remaining,
+    raw_url: `/s/${token}/preview/raw?pv=${encodeURIComponent(pv)}${codeSuffix}`,
+    zip_url: kind === "zip" ? `/s/${token}/preview/zip?pv=${encodeURIComponent(pv)}` : null,
+  });
+}
+
+/** GET /s/:token/preview/raw —— 内联流式预览（Range 支持），不重复计次 */
+export async function handlePreviewRaw(
+  req: Request,
+  env: Env,
+  ctx: ExecutionContext,
+  token: string
+): Promise<Response> {
+  const row = await getShare(env, token);
+  if (!row) return json({ error: "not_found" }, { status: 404 });
+  const url = new URL(req.url);
+  if (!(await verifyPreviewToken(env, token, url.search))) {
+    return json({ error: "unauthorized" }, { status: 403 });
+  }
+
+  const range = parseRange(req.headers.get("range"), row.size);
+  let obj;
+  try {
+    const st = await storage(env);
+    obj = await st.get(row.key, range ? { offset: range.offset, length: range.length } : undefined);
+  } catch (err: any) {
+    console.error("[preview] storage error:", err);
+    return json({ error: "storage_error" }, { status: 502 });
+  }
+  if (!obj) return json({ error: "not_found" }, { status: 404 });
+
+  const headers = new Headers();
+  headers.set("content-type", row.mime || obj.contentType || "application/octet-stream");
+  const displayName = row.download_name || row.name;
+  headers.set("content-disposition", `inline; filename*=UTF-8''${encodeURIComponent(displayName)}`);
+  headers.set("etag", obj.etag);
+  headers.set("accept-ranges", "bytes");
+  headers.set("cache-control", "private, max-age=60");
+  const { addSecurityHeaders } = await import("./pages");
+  addSecurityHeaders(headers, { isDownload: true });
+  const servedLen = range ? range.length : obj.size;
+  headers.set("content-length", String(servedLen));
+  if (range) headers.set("content-range", `bytes ${range.offset}-${range.offset + servedLen - 1}/${row.size}`);
+
+  // 预览同样消耗带宽 → 计入月度流量（若带了有效激活码则扣激活码额度），但不写 download_logs
+  const codeParam = (url.searchParams.get("code") || req.headers.get("x-activation-code") || "").trim().toUpperCase() || null;
+  ctx.waitUntil(
+    (async () => {
+      await addTraffic(env, servedLen);
+      if (codeParam) {
+        const codeRow = await findCodeByString(env, codeParam);
+        if (codeRow) {
+          const dr = await deductQuota(env, codeRow, servedLen);
+          if (!dr.ok) console.warn(`[preview-code-decline] code=${codeRow.code} reason=${dr.reason}`);
+        }
+      }
+    })()
+  );
+
+  return new Response(obj.body, { status: range ? 206 : 200, headers });
+}
+
+/** GET /s/:token/preview/zip —— 返回 ZIP 内部文件结构 */
+export async function handlePreviewZip(req: Request, env: Env, token: string): Promise<Response> {
+  const row = await getShare(env, token);
+  if (!row) return json({ error: "not_found" }, { status: 404 });
+  if (previewKind(row.mime, row.name) !== "zip") return json({ ok: false, error: "not_zip" }, { status: 415 });
+  if (!(await verifyPreviewToken(env, token, new URL(req.url).search))) {
+    return json({ error: "unauthorized" }, { status: 403 });
+  }
+  const res = await parseZipEntries(env, row.key, row.size);
+  if ("error" in res) return json({ ok: false, error: res.error }, { status: 400 });
+  return json({ ok: true, entries: res.entries, truncated: res.truncated });
 }

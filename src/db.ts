@@ -28,6 +28,8 @@ const SCHEMA_STATEMENTS: string[] = [
     expires_at INTEGER,
     max_downloads INTEGER,
     download_count INTEGER NOT NULL DEFAULT 0,
+    max_previews INTEGER,
+    preview_count INTEGER NOT NULL DEFAULT 0,
     revoked INTEGER NOT NULL DEFAULT 0,
     password_hash TEXT,
     password_cipher TEXT,
@@ -204,6 +206,9 @@ const MIGRATION_STATEMENTS: string[] = [
   // ═══════════ WebDAV 虚拟目录 ═══════════
   "ALTER TABLE files ADD COLUMN path TEXT NOT NULL DEFAULT '/'",
   "CREATE INDEX IF NOT EXISTS idx_files_path ON files(path)",
+  // ═══════════ 在线预览次数限制（独立于下载次数） ═══════════
+  "ALTER TABLE shares ADD COLUMN max_previews INTEGER",
+  "ALTER TABLE shares ADD COLUMN preview_count INTEGER NOT NULL DEFAULT 0",
 ];
 
 /**
@@ -318,6 +323,8 @@ const EXPECTED_COLUMNS: { table: string; column: string }[] = [
   { table: "shares", column: "market_desc" },
   { table: "download_logs", column: "activation_code" },
   { table: "files", column: "path" },
+  { table: "shares", column: "max_previews" },
+  { table: "shares", column: "preview_count" },
 ];
 
 /** 预期的索引（同样是可能缺失的） */
