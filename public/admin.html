@@ -742,6 +742,7 @@ const I18N = {
     secFilterAll: '全部结果', secFilterSuccess: '仅成功', secFilterFail: '仅失败',
     secActionAll: '全部操作',
     // 管理员 GitHub 登录方式
+    tabLoginMethods: '登录方式',
     adminLoginMethod: '管理员登录方式',
     adminLoginMethodD: '把 GitHub 账号绑定为管理员登录方式。绑定后，登录后台可直接用 GitHub 登录，无需输入管理密钥。',
     ghConfigTitle: 'GitHub OAuth App 配置',
@@ -1134,6 +1135,7 @@ const I18N = {
     secFilterAll: 'All', secFilterSuccess: 'Success only', secFilterFail: 'Fail only',
     secActionAll: 'All actions',
     // Admin GitHub login
+    tabLoginMethods: 'Login Methods',
     adminLoginMethod: 'Admin Login Methods',
     adminLoginMethodD: 'Bind your GitHub account as an admin login method. Once bound, you can sign in to the console with GitHub — no admin key required.',
     ghConfigTitle: 'GitHub OAuth App',
@@ -1726,6 +1728,7 @@ const NAV_GROUPS = [
   { key: 'security', ic: '🛡️', label: () => t('navSecurity'), subs: [
       { tab: 'bans',    label: () => t('tabBans'),    ic: '🚫' },
       { tab: 'security',label: () => t('tabSecurity'),ic: '🔒' },
+      { tab: 'logins',  label: () => t('tabLoginMethods'), ic: '🔗' },
     ]},
   { key: 'system', ic: '⚙️', label: () => t('navSystem'), subs: [
       { tab: 'codes',    label: () => t('tabCodes'),    ic: '🎟️' },
@@ -1844,7 +1847,8 @@ async function showApp(prefetchedSession){
 const TAB_LOADERS = {
   overview: loadOverview, files: loadFiles, storage: loadStorage, shares: loadShares,
   direct: loadDirectLinks, logs: loadLogs, bans: loadBans,
-  global: loadGlobal, codes: loadCodes, security: loadSecurity, webdav: loadWebDAV, settings: loadSettings,
+  global: loadGlobal, codes: loadCodes, security: loadSecurity, logins: loadAdminLogins,
+  webdav: loadWebDAV, settings: loadSettings,
 };
 
 function switchTab(tab){
@@ -2533,10 +2537,7 @@ let secPage = 1, secQuery = '', secAction = '', secResult = '';
 async function loadSecurity(){
   const q = encodeURIComponent(secQuery);
   const params = `page=${secPage}&per_page=20&q=${q}&action=${secAction}&result=${secResult}`;
-  const [d, gh] = await Promise.all([
-    api(`/api/admin/login-logs?${params}`),
-    api('/api/admin/oauth/github').catch(() => null),
-  ]);
+  const d = await api(`/api/admin/login-logs?${params}`);
 
   const actionMap = { login: t('actionLogin'), logout: t('actionLogout'), verify_fail: t('actionFail'), rate_limited: t('actionRateLimited') };
   const reasonMap = { invalid_key: t('secReasonInvalid'), rate_limited: t('secReasonRateLimited'), session_expired: t('secReasonSession') };
@@ -2572,8 +2573,58 @@ async function loadSecurity(){
         <button class="btn sm danger" id="sec-clear-all">${esc(t('secClearAll'))}</button>
       </div>
     </div>
-    ${gh ? `
-    <div class="glass section" style="margin-bottom:18px">
+    <div class="glass section">
+      ${d.logs.length ? `
+      <div style="overflow-x:auto"><table class="tbl">
+        <thead><tr><th>${esc(t('colAction'))}</th><th>${esc(t('colIP'))}</th><th>${esc(t('colCountry'))}</th><th>${esc(t('colBrowser'))}</th><th>${esc(t('colOS'))}</th><th>${esc(t('colResult'))}</th><th>${esc(t('colReason'))}</th><th>${esc(t('colLoginTime'))}</th></tr></thead>
+        <tbody>${d.logs.map(l => {
+          const actText = actionMap[l.action] || l.action;
+          const reasonText = l.reason ? (reasonMap[l.reason] || l.reason) : '—';
+          return `<tr>
+            <td><span class="tag ${l.result === 'success' ? 'active' : 'revoked'}"><i></i>${esc(actText)}</span></td>
+            <td class="mono">${esc(l.ip)}</td>
+            <td>${esc(l.country || '—')}</td>
+            <td>${esc(l.browser)}</td>
+            <td>${esc(l.os)}</td>
+            <td>${l.result === 'success' ? '<span style="color:#6ee7b7">✓ ' + esc(t('resultSuccess')) + '</span>' : '<span style="color:#fda293">✗ ' + esc(t('resultFail')) + '</span>'}</td>
+            <td class="name-cell" title="${esc(reasonText)}">${esc(reasonText)}</td>
+            <td class="num">${fmtTime(l.created_at)}</td>
+          </tr>`;
+        }).join('')}
+        </tbody>
+      </table></div>
+      <div class="pager">
+        <button class="btn sm" id="sec-pg-prev" ${d.page<=1?'disabled':''}>${esc(t('prev'))}</button>
+        <span class="info">${esc(t('pageOf',{a:d.page,b:d.pages}))} · ${esc(t('totalN',{n:d.total}))}</span>
+        <button class="btn sm" id="sec-pg-next" ${d.page>=d.pages?'disabled':''}>${esc(t('next'))}</button>
+      </div>` : `<div class="empty"><div class="icon">🛡️</div>${esc(t('secNoLogs'))}</div>`}
+    </div>`;
+
+  $('#sec-action').value = secAction;
+  $('#sec-result').value = secResult;
+  $('#sec-action').onchange = e => { secAction = e.target.value; secPage = 1; loadSecurity(); };
+  $('#sec-result').onchange = e => { secResult = e.target.value; secPage = 1; loadSecurity(); };
+  let secTimer;
+  $('#sec-q').oninput = e => { clearTimeout(secTimer); secTimer = setTimeout(() => { secQuery = e.target.value.trim(); secPage = 1; loadSecurity(); }, 350); };
+  $('#sec-pg-prev')?.addEventListener('click', () => { secPage--; loadSecurity(); });
+  $('#sec-pg-next')?.addEventListener('click', () => { secPage++; loadSecurity(); });
+  $('#sec-clear-30').onclick = async () => {
+    if(!(await confirmDialog(t('secConfirmClear30T'), t('secConfirmClear30D'), false))) return;
+    const r = await api('/api/admin/login-logs?mode=older&days=30', { method:'DELETE' });
+    toast(t('secClearedN', {n: r.deleted})); loadSecurity();
+  };
+  $('#sec-clear-all').onclick = async () => {
+    if(!(await confirmDialog(t('secConfirmClearAllT'), t('secConfirmClearAllD')))) return;
+    const r = await api('/api/admin/login-logs?mode=all', { method:'DELETE' });
+    toast(t('secClearedN', {n: r.deleted})); loadSecurity();
+  };
+}
+
+/* ═══════════ 管理员登录方式（独立标签页） ═══════════ */
+async function loadAdminLogins(){
+  const gh = await api('/api/admin/oauth/github');
+  $('#view').innerHTML = `
+    <div class="glass section">
       <div class="section-title">
         <h2>🔗 ${esc(t('adminLoginMethod'))}</h2>
         ${gh.bound
@@ -2634,92 +2685,44 @@ async function loadSecurity(){
           <span class="track"><span class="thumb"></span></span>
         </label>
       </div>
-    </div>` : ''}
-    <div class="glass section">
-      ${d.logs.length ? `
-      <div style="overflow-x:auto"><table class="tbl">
-        <thead><tr><th>${esc(t('colAction'))}</th><th>${esc(t('colIP'))}</th><th>${esc(t('colCountry'))}</th><th>${esc(t('colBrowser'))}</th><th>${esc(t('colOS'))}</th><th>${esc(t('colResult'))}</th><th>${esc(t('colReason'))}</th><th>${esc(t('colLoginTime'))}</th></tr></thead>
-        <tbody>${d.logs.map(l => {
-          const actText = actionMap[l.action] || l.action;
-          const reasonText = l.reason ? (reasonMap[l.reason] || l.reason) : '—';
-          return `<tr>
-            <td><span class="tag ${l.result === 'success' ? 'active' : 'revoked'}"><i></i>${esc(actText)}</span></td>
-            <td class="mono">${esc(l.ip)}</td>
-            <td>${esc(l.country || '—')}</td>
-            <td>${esc(l.browser)}</td>
-            <td>${esc(l.os)}</td>
-            <td>${l.result === 'success' ? '<span style="color:#6ee7b7">✓ ' + esc(t('resultSuccess')) + '</span>' : '<span style="color:#fda293">✗ ' + esc(t('resultFail')) + '</span>'}</td>
-            <td class="name-cell" title="${esc(reasonText)}">${esc(reasonText)}</td>
-            <td class="num">${fmtTime(l.created_at)}</td>
-          </tr>`;
-        }).join('')}
-        </tbody>
-      </table></div>
-      <div class="pager">
-        <button class="btn sm" id="sec-pg-prev" ${d.page<=1?'disabled':''}>${esc(t('prev'))}</button>
-        <span class="info">${esc(t('pageOf',{a:d.page,b:d.pages}))} · ${esc(t('totalN',{n:d.total}))}</span>
-        <button class="btn sm" id="sec-pg-next" ${d.page>=d.pages?'disabled':''}>${esc(t('next'))}</button>
-      </div>` : `<div class="empty"><div class="icon">🛡️</div>${esc(t('secNoLogs'))}</div>`}
     </div>`;
 
-  $('#sec-action').value = secAction;
-  $('#sec-result').value = secResult;
-  $('#sec-action').onchange = e => { secAction = e.target.value; secPage = 1; loadSecurity(); };
-  $('#sec-result').onchange = e => { secResult = e.target.value; secPage = 1; loadSecurity(); };
-  let secTimer;
-  $('#sec-q').oninput = e => { clearTimeout(secTimer); secTimer = setTimeout(() => { secQuery = e.target.value.trim(); secPage = 1; loadSecurity(); }, 350); };
-  $('#sec-pg-prev')?.addEventListener('click', () => { secPage--; loadSecurity(); });
-  $('#sec-pg-next')?.addEventListener('click', () => { secPage++; loadSecurity(); });
-  $('#sec-clear-30').onclick = async () => {
-    if(!(await confirmDialog(t('secConfirmClear30T'), t('secConfirmClear30D'), false))) return;
-    const r = await api('/api/admin/login-logs?mode=older&days=30', { method:'DELETE' });
-    toast(t('secClearedN', {n: r.deleted})); loadSecurity();
-  };
-  $('#sec-clear-all').onclick = async () => {
-    if(!(await confirmDialog(t('secConfirmClearAllT'), t('secConfirmClearAllD')))) return;
-    const r = await api('/api/admin/login-logs?mode=all', { method:'DELETE' });
-    toast(t('secClearedN', {n: r.deleted})); loadSecurity();
-  };
-
-  // ── 管理员 GitHub 登录方式 ──
-  if(gh){
-    // 保存 OAuth App 配置（Secret 留空 = 保留现有值）
-    $('#gh-save')?.addEventListener('click', async () => {
-      const body = { client_id: $('#gh-client-id').value.trim() };
-      const sec = $('#gh-client-secret').value.trim();
-      if(sec) body.client_secret = sec;
-      try{
-        await api('/api/admin/oauth/github', { method:'PUT', body: JSON.stringify(body) });
-        toast(t('ghSaved')); loadSecurity();
-      }catch(e){ toast(e.message || t('ghErrGeneric'), 'err'); }
-    });
-    // 绑定 —— 跳转 GitHub 授权
-    $('#gh-bind')?.addEventListener('click', async () => {
-      try{
-        const r = await api('/api/admin/oauth/github/bind-start', { method:'POST' });
-        if(r.authorize_url) location.href = r.authorize_url;
-        else toast(t('ghNeedConfig'), 'err');
-      }catch(e){ toast(e.message || t('ghNeedConfig'), 'err'); }
-    });
-    // 解绑
-    $('#gh-unbind')?.addEventListener('click', async () => {
-      if(!(await confirmDialog(t('ghConfirmUnbindT'), t('ghConfirmUnbindD')))) return;
-      try{
-        await api('/api/admin/oauth/github/unbind', { method:'POST' });
-        toast(t('ghUnboundOk')); loadSecurity();
-      }catch(e){ toast(e.message || t('ghErrGeneric'), 'err'); }
-    });
-    // 启用/停用 GitHub 登录
-    $('#gh-enable')?.addEventListener('change', async (e) => {
-      try{
-        await api('/api/admin/oauth/github', { method:'PUT', body: JSON.stringify({ enabled: e.target.checked }) });
-        toast(t('ghSaved'));
-      }catch(err){
-        e.target.checked = !e.target.checked;
-        toast(err.message || t('ghLoginDisabledHint'), 'err');
-      }
-    });
-  }
+  // 保存 OAuth App 配置（Secret 留空 = 保留现有值）
+  $('#gh-save')?.addEventListener('click', async () => {
+    const body = { client_id: $('#gh-client-id').value.trim() };
+    const sec = $('#gh-client-secret').value.trim();
+    if(sec) body.client_secret = sec;
+    try{
+      await api('/api/admin/oauth/github', { method:'PUT', body: JSON.stringify(body) });
+      toast(t('ghSaved')); loadAdminLogins();
+    }catch(e){ toast(e.message || t('ghErrGeneric'), 'err'); }
+  });
+  // 绑定 —— 跳转 GitHub 授权
+  $('#gh-bind')?.addEventListener('click', async () => {
+    try{
+      const r = await api('/api/admin/oauth/github/bind-start', { method:'POST' });
+      if(r.authorize_url) location.href = r.authorize_url;
+      else toast(t('ghNeedConfig'), 'err');
+    }catch(e){ toast(e.message || t('ghNeedConfig'), 'err'); }
+  });
+  // 解绑
+  $('#gh-unbind')?.addEventListener('click', async () => {
+    if(!(await confirmDialog(t('ghConfirmUnbindT'), t('ghConfirmUnbindD')))) return;
+    try{
+      await api('/api/admin/oauth/github/unbind', { method:'POST' });
+      toast(t('ghUnboundOk')); loadAdminLogins();
+    }catch(e){ toast(e.message || t('ghErrGeneric'), 'err'); }
+  });
+  // 启用/停用 GitHub 登录
+  $('#gh-enable')?.addEventListener('change', async (e) => {
+    try{
+      await api('/api/admin/oauth/github', { method:'PUT', body: JSON.stringify({ enabled: e.target.checked }) });
+      toast(t('ghSaved'));
+    }catch(err){
+      e.target.checked = !e.target.checked;
+      toast(err.message || t('ghLoginDisabledHint'), 'err');
+    }
+  });
 }
 
 /* ═══════════ 全球分布 —— ECharts 3D 地球仪 ═══════════ */
