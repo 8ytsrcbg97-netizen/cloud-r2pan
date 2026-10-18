@@ -252,6 +252,7 @@ export async function handleAdminApi(
       cloudflare_recovery: !!env.totp_recovery,
       recovery_remaining: s.totpRecoveryHash ? s.totpRecoveryHash.split(",").filter(Boolean).length : 0,
       ui_theme: s.uiTheme,
+      admin_tab_config: s.adminTabConfig,
     });
   }
 
@@ -1119,6 +1120,8 @@ export async function handleAdminApi(
       analytics_engine_available: !!env.analytics,
       // UI 主题
       ui_theme: s.uiTheme,
+      // 后台标签页自定义
+      admin_tab_config: s.adminTabConfig,
       // WebDAV
       webdav_enabled: s.webdavEnabled,
       webdav_username: s.webdavUsername,
@@ -1235,6 +1238,26 @@ export async function handleAdminApi(
       const t = body.ui_theme;
       if (t === "light" || t === "dark") {
         patch.ui_theme = t;
+      }
+    }
+
+    // 后台标签页自定义 —— 必须是合法 JSON 且含 groups 数组，否则拒绝
+    if (typeof body.admin_tab_config === "string") {
+      const raw = body.admin_tab_config.trim();
+      if (raw === "") {
+        patch.admin_tab_config = "";
+      } else {
+        let parsed: unknown = null;
+        try {
+          parsed = JSON.parse(raw);
+        } catch {
+          return json({ error: msg(req, "标签配置不是合法的 JSON", "Tab config is not valid JSON") }, 400);
+        }
+        const groups = (parsed as { groups?: unknown } | null)?.groups;
+        if (!Array.isArray(groups)) {
+          return json({ error: msg(req, "标签配置缺少 groups 数组", "Tab config must contain a groups array") }, 400);
+        }
+        patch.admin_tab_config = raw.slice(0, 20000);
       }
     }
 

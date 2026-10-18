@@ -801,6 +801,22 @@ const I18N = {
     codesFloatingBtnPosition: '按钮位置',
     codesFloatingBtnPosRight: '右上角',
     codesFloatingBtnPosLeft: '左上角',
+    // 自定义标签页
+    tabCfgTitle: '🧩 自定义标签页',
+    tabCfgD: '调整后台侧边栏标签页的显示与顺序，改动即时生效并保存。',
+    tabCfgNote: '「系统设置」标签是管理入口，始终可见、不可隐藏。',
+    tabCfgExport: '导出配置',
+    tabCfgImport: '导入配置',
+    tabCfgReset: '还原默认',
+    tabCfgResetT: '还原默认标签设置',
+    tabCfgResetD: '将标签的显示与顺序恢复为默认配置？',
+    tabCfgExportOk: '配置已导出',
+    tabCfgImportOk: '配置已导入并应用',
+    tabCfgImportFail: '导入失败',
+    tabCfgSaved: '标签设置已保存',
+    tabCfgMoveUp: '上移',
+    tabCfgMoveDown: '下移',
+    tabCfgLockedHint: '该标签为管理入口，不可隐藏',
 
     // 2FA 设置
     twofa: '两步验证 (TOTP)',
@@ -1194,6 +1210,22 @@ const I18N = {
     codesFloatingBtnPosition: 'Position',
     codesFloatingBtnPosRight: 'Top right',
     codesFloatingBtnPosLeft: 'Top left',
+    // Custom tabs
+    tabCfgTitle: '🧩 Custom Tabs',
+    tabCfgD: 'Adjust the visibility and order of the admin sidebar tabs. Changes apply and save instantly.',
+    tabCfgNote: 'The "Settings" tab is the admin entry point and is always visible.',
+    tabCfgExport: 'Export config',
+    tabCfgImport: 'Import config',
+    tabCfgReset: 'Reset to default',
+    tabCfgResetT: 'Reset tab settings',
+    tabCfgResetD: 'Restore the default tab visibility and order?',
+    tabCfgExportOk: 'Config exported',
+    tabCfgImportOk: 'Config imported and applied',
+    tabCfgImportFail: 'Import failed',
+    tabCfgSaved: 'Tab settings saved',
+    tabCfgMoveUp: 'Move up',
+    tabCfgMoveDown: 'Move down',
+    tabCfgLockedHint: 'This is the admin entry tab and cannot be hidden',
 
     // 2FA settings
     twofa: 'Two-Factor Authentication (TOTP)',
@@ -1736,39 +1768,135 @@ const NAV_GROUPS = [
       { tab: 'settings', label: () => t('tabSettings'), ic: '⚙️' },
     ]},
 ];
-const TAB_TO_GROUP = {};
-NAV_GROUPS.forEach(g => {
-  if (g.tab) TAB_TO_GROUP[g.tab] = g.key;
-  if (g.subs) g.subs.forEach(s => TAB_TO_GROUP[s.tab] = g.key);
-});
+/* ═══════════ 标签页自定义 ═══════════
+ * 配置结构：{ version: 1, groups: [ { key, visible, subs?: [ { tab, visible } ] } ] }
+ * 仅存「显示/隐藏」与「顺序」；图标与文案始终取自 NAV_GROUPS 默认定义。
+ * 「system」分组与「settings」标签是管理入口，强制可见（防止把自己锁在配置页外）。
+ */
+const LOCKED_TABS = new Set(['settings']);
 
-/* ═══════════ 主应用 ═══════════ */
-let currentTab = 'overview';
-let openGroup = 'overview'; // 当前展开的侧边栏分组
-let logsPage = 1, logsQuery = '';
+function defaultTabConfig(){
+  return {
+    version: 1,
+    groups: NAV_GROUPS.map(g => ({
+      key: g.key,
+      visible: true,
+      ...(g.subs ? { subs: g.subs.map(s => ({ tab: s.tab, visible: true })) } : {}),
+    })),
+  };
+}
 
-async function showApp(prefetchedSession){
-  loginStage = 'password'; savedLoginKey = '';
-  try{
-    // 复用启动时已拿到的 session（避免重复请求）；登录/2FA 成功后无缓存则自行拉取
-    const s = prefetchedSession || await api('/api/admin/session');
-    siteTitle = s.site_title || siteTitle;
-    // 隐藏路由：访问 /admin/apple 强制 Apple 玻璃风格（暗色紫蓝渐变）
-    const path = location.pathname;
-    if (/\/admin\/apple(\/|$)/.test(path)) {
-      document.documentElement.dataset.theme = 'apple-dark';
+/** 把任意输入（含 null / 残缺 / 未知 key）归一化为合法配置 */
+function normalizeTabConfig(input){
+  const def = defaultTabConfig();
+  const defByKey = new Map(def.groups.map(g => [g.key, g]));
+  const defSubTabs = new Map(NAV_GROUPS.filter(g => g.subs).map(g => [g.key, g.subs.map(s => s.tab)]));
+  const srcGroups = (input && Array.isArray(input.groups)) ? input.groups : [];
+  const srcByKey = new Map();
+  srcGroups.forEach(g => { if (g && typeof g.key === 'string' && !srcByKey.has(g.key)) srcByKey.set(g.key, g); });
+
+  // 顺序：输入中已知的 key 优先（去重），再补上默认里缺失的 key
+  const order = [];
+  srcGroups.forEach(g => { if (g && defByKey.has(g.key) && !order.includes(g.key)) order.push(g.key); });
+  def.groups.forEach(g => { if (!order.includes(g.key)) order.push(g.key); });
+
+  return {
+    version: 1,
+    groups: order.map(key => {
+      const src = srcByKey.get(key) || {};
+      const d = defByKey.get(key);
+      const out = { key, visible: src.visible !== false };
+      if (d.subs){
+        const tabs = defSubTabs.get(key) || [];
+        const srcSubs = Array.isArray(src.subs) ? src.subs : [];
+        const subOrder = [];
+        srcSubs.forEach(s => { if (s && tabs.includes(s.tab) && !subOrder.includes(s.tab)) subOrder.push(s.tab); });
+        tabs.forEach(tb => { if (!subOrder.includes(tb)) subOrder.push(tb); });
+        const srcSubByTab = new Map();
+        srcSubs.forEach(s => { if (s && typeof s.tab === 'string' && !srcSubByTab.has(s.tab)) srcSubByTab.set(s.tab, s); });
+        out.subs = subOrder.map(tb => {
+          const ss = srcSubByTab.get(tb) || {};
+          return { tab: tb, visible: ss.visible !== false };
+        });
+      }
+      return out;
+    }),
+  };
+}
+
+/** 强制锁定管理入口可见（settings 标签及其所属分组） */
+function enforceLockedTabs(cfg){
+  cfg.groups.forEach(g => {
+    if ((g.subs || []).some(s => LOCKED_TABS.has(s.tab))) g.visible = true;
+    (g.subs || []).forEach(s => { if (LOCKED_TABS.has(s.tab)) s.visible = true; });
+  });
+  return cfg;
+}
+
+/** 计算生效的侧边栏分组（按配置排序 + 过滤隐藏项） */
+function computeEffectiveNavGroups(cfg){
+  const out = [];
+  cfg.groups.forEach(cg => {
+    const def = NAV_GROUPS.find(g => g.key === cg.key);
+    if (!def || !cg.visible) return;
+    if (def.subs){
+      const subs = (cg.subs || []).filter(s => s.visible).map(s => {
+        const sd = def.subs.find(x => x.tab === s.tab);
+        return sd ? { tab: sd.tab, label: sd.label, ic: sd.ic } : null;
+      }).filter(Boolean);
+      if (!subs.length) return; // 分组内全部隐藏 → 整个分组也不显示
+      out.push({ key: def.key, ic: def.ic, label: def.label, subs });
     } else {
-      // 根据后端偏好设置主题（默认 dark）
-      document.documentElement.dataset.theme = s.ui_theme === 'light' ? 'light' : 'dark';
+      out.push({ key: def.key, ic: def.ic, label: def.label, tab: def.tab });
     }
-  }catch{
-    // 兜底
-    document.documentElement.dataset.theme = location.pathname.includes('/admin/apple') ? 'apple-dark' : 'dark';
-  }
-  document.title = t('docTitle', {site: siteTitle});
+  });
+  return out;
+}
 
-  // 渲染侧边栏
-  const sidebarHtml = NAV_GROUPS.map(g => {
+function buildTabToGroup(groups){
+  const m = {};
+  groups.forEach(g => {
+    if (g.tab) m[g.tab] = g.key;
+    if (g.subs) g.subs.forEach(s => { m[s.tab] = g.key; });
+  });
+  return m;
+}
+
+let tabConfig = enforceLockedTabs(normalizeTabConfig(null));
+let EFFECTIVE_NAV_GROUPS = computeEffectiveNavGroups(tabConfig);
+let TAB_TO_GROUP = buildTabToGroup(EFFECTIVE_NAV_GROUPS);
+
+/** 解析后端存储的 JSON 字符串 */
+function parseStoredTabConfig(raw){
+  if (!raw) return null;
+  try { return JSON.parse(raw); } catch { return null; }
+}
+
+/** 应用配置并重渲染侧边栏导航 */
+function applyTabConfig(cfg){
+  tabConfig = enforceLockedTabs(normalizeTabConfig(cfg));
+  EFFECTIVE_NAV_GROUPS = computeEffectiveNavGroups(tabConfig);
+  TAB_TO_GROUP = buildTabToGroup(EFFECTIVE_NAV_GROUPS);
+  renderSidebarNav();
+}
+
+/** 仅持久化本功能自身的配置 */
+async function persistTabConfig(cfg){
+  await api('/api/admin/settings', { method: 'PUT', body: JSON.stringify({ admin_tab_config: JSON.stringify(cfg) }) });
+}
+
+/** 首个可见标签（当前标签被隐藏时用于回退） */
+function firstEffectiveTab(){
+  for (const g of EFFECTIVE_NAV_GROUPS){
+    if (g.tab) return g.tab;
+    if (g.subs && g.subs.length) return g.subs[0].tab;
+  }
+  return 'settings';
+}
+
+/** 侧边栏导航 HTML */
+function sidebarHtmlFor(groups){
+  return groups.map(g => {
     const isSingle = !g.subs;
     const active = (isSingle && currentTab === g.tab) || TAB_TO_GROUP[currentTab] === g.key;
     const subHtml = g.subs ? `
@@ -1785,6 +1913,65 @@ async function showApp(prefetchedSession){
       </button>
       ${subHtml}`;
   }).join('');
+}
+
+/** 重渲染侧边栏（配置变更后调用；事件为委托绑定，无需重新绑定） */
+function renderSidebarNav(){
+  const sidebar = $('#sidebar');
+  if (!sidebar) return;
+  sidebar.innerHTML = sidebarHtmlFor(EFFECTIVE_NAV_GROUPS);
+  highlightSidebar(currentTab);
+}
+
+/** 更新侧边栏高亮与展开状态 */
+function highlightSidebar(tab){
+  const sidebar = $('#sidebar');
+  if (!sidebar) return;
+  sidebar.querySelectorAll('.sb-main').forEach(m => {
+    const gKey = m.dataset.group;
+    const g = EFFECTIVE_NAV_GROUPS.find(x => x.key === gKey);
+    if (!g) return;
+    const isSingle = !g.subs;
+    const isActive = (isSingle && g.tab === tab) || TAB_TO_GROUP[tab] === gKey;
+    m.classList.toggle('open', isActive);
+    m.classList.toggle('active', isActive && isSingle);
+    const sub = sidebar.querySelector('.sb-sub[data-sub="' + gKey + '"]');
+    if (sub) sub.classList.toggle('open', isActive);
+  });
+  sidebar.querySelectorAll('.sb-sub button[data-tab]').forEach(b =>
+    b.classList.toggle('active', b.dataset.tab === tab)
+  );
+}
+
+/* ═══════════ 主应用 ═══════════ */
+let currentTab = 'overview';
+let openGroup = 'overview'; // 当前展开的侧边栏分组
+let logsPage = 1, logsQuery = '';
+
+async function showApp(prefetchedSession){
+  loginStage = 'password'; savedLoginKey = '';
+  try{
+    // 复用启动时已拿到的 session（避免重复请求）；登录/2FA 成功后无缓存则自行拉取
+    const s = prefetchedSession || await api('/api/admin/session');
+    siteTitle = s.site_title || siteTitle;
+    // 应用后台标签页自定义配置（#sidebar 尚未渲染，此时仅更新内存状态）
+    applyTabConfig(normalizeTabConfig(parseStoredTabConfig(s.admin_tab_config)));
+    // 隐藏路由：访问 /admin/apple 强制 Apple 玻璃风格（暗色紫蓝渐变）
+    const path = location.pathname;
+    if (/\/admin\/apple(\/|$)/.test(path)) {
+      document.documentElement.dataset.theme = 'apple-dark';
+    } else {
+      // 根据后端偏好设置主题（默认 dark）
+      document.documentElement.dataset.theme = s.ui_theme === 'light' ? 'light' : 'dark';
+    }
+  }catch{
+    // 兜底
+    document.documentElement.dataset.theme = location.pathname.includes('/admin/apple') ? 'apple-dark' : 'dark';
+  }
+  document.title = t('docTitle', {site: siteTitle});
+
+  // 渲染侧边栏（依据已应用的标签页配置）
+  const sidebarHtml = sidebarHtmlFor(EFFECTIVE_NAV_GROUPS);
 
   $('#app').innerHTML = `
   <div class="wrap">
@@ -1840,7 +2027,8 @@ async function showApp(prefetchedSession){
     $('#theme-toggle').textContent = next === 'light' ? '🌙' : '☀️';
     try { await api('/api/admin/settings', { method:'PUT', body: JSON.stringify({ ui_theme: next }) }); } catch {}
   };
-  switchTab('overview');
+  // 落地标签：默认概览；若被自定义配置隐藏则回退到首个可见标签
+  switchTab(TAB_TO_GROUP['overview'] ? 'overview' : firstEffectiveTab());
 }
 
 /* Tab → loadXxx 函数映射 */
@@ -1855,22 +2043,7 @@ function switchTab(tab){
   currentTab = tab;
   openGroup = TAB_TO_GROUP[tab] || tab;
   // 更新侧边栏高亮 & 展开
-  const sidebar = $('#sidebar');
-  if (sidebar) {
-    sidebar.querySelectorAll('.sb-main').forEach(m => {
-      const gKey = m.dataset.group;
-      const g = NAV_GROUPS.find(g => g.key === gKey);
-      const isSingle = !g.subs;
-      const isActive = (isSingle && g.tab === tab) || TAB_TO_GROUP[tab] === gKey;
-      m.classList.toggle('open', isActive);
-      m.classList.toggle('active', isActive && isSingle);
-      const sub = sidebar.querySelector('.sb-sub[data-sub="' + gKey + '"]');
-      if (sub) sub.classList.toggle('open', isActive);
-    });
-    sidebar.querySelectorAll('.sb-sub button[data-tab]').forEach(b =>
-      b.classList.toggle('active', b.dataset.tab === tab)
-    );
-  }
+  highlightSidebar(tab);
   const v = $('#view');
   v.innerHTML = '<div class="spin"></div>';
   (TAB_LOADERS[tab] || (() => Promise.resolve()))().catch(e => {
@@ -3336,6 +3509,194 @@ async function loadWebDAV(){
 }
 
 /* ═══════════ 设置 ═══════════ */
+/* ── 后台标签页自定义 UI ── */
+function tabCfgGroupDef(key){ return NAV_GROUPS.find(g => g.key === key); }
+function tabCfgSubDef(tab){
+  for (const g of NAV_GROUPS){ if (g.subs){ const s = g.subs.find(x => x.tab === tab); if (s) return s; } }
+  return null;
+}
+
+function renderTabCfgSection(){
+  return `
+    <div class="glass group" id="tabcfg-group" style="margin-top:14px">
+      <div class="row" style="flex-direction:column;align-items:stretch;gap:6px">
+        <div class="info"><div class="t">${esc(t('tabCfgTitle'))}</div><div class="d">${esc(t('tabCfgD'))}</div></div>
+        <div style="font-size:12px;color:var(--text-3)">${esc(t('tabCfgNote'))}</div>
+      </div>
+      <div id="tabcfg-list" style="display:flex;flex-direction:column;gap:8px;padding:4px 0 8px">${renderTabCfgList()}</div>
+      <div class="row" style="justify-content:flex-end;gap:8px">
+        <button class="btn sm" id="tabcfg-export">⬇ ${esc(t('tabCfgExport'))}</button>
+        <button class="btn sm" id="tabcfg-import">⬆ ${esc(t('tabCfgImport'))}</button>
+        <button class="btn sm danger" id="tabcfg-reset">↩ ${esc(t('tabCfgReset'))}</button>
+        <input type="file" id="tabcfg-file" accept="application/json,.json" style="display:none">
+      </div>
+    </div>`;
+}
+
+function renderTabCfgList(){
+  const cfg = tabConfig;
+  const lastG = cfg.groups.length - 1;
+  return cfg.groups.map((g, gi) => {
+    const def = tabCfgGroupDef(g.key);
+    if (!def) return '';
+    const lockedGroup = (g.subs || []).some(s => LOCKED_TABS.has(s.tab));
+    const moveBtns = (attr, i, last) => `
+          <button class="btn sm" data-cfg-move="up" ${attr} style="padding:4px 9px;font-size:11px;border-radius:8px" ${i===0?'disabled':''} title="${esc(t('tabCfgMoveUp'))}">↑</button>
+          <button class="btn sm" data-cfg-move="down" ${attr} style="padding:4px 9px;font-size:11px;border-radius:8px" ${i===last?'disabled':''} title="${esc(t('tabCfgMoveDown'))}">↓</button>`;
+    const subRows = def.subs ? (g.subs || []).map((s, si) => {
+      const sd = tabCfgSubDef(s.tab);
+      if (!sd) return '';
+      const locked = LOCKED_TABS.has(s.tab);
+      return `
+        <div class="tabcfg-sub" style="display:flex;align-items:center;gap:8px;padding:6px 10px 6px 24px;border-radius:10px;background:var(--sf-soft)">
+          <span style="font-size:14px">${sd.ic}</span>
+          <span style="flex:1;font-size:13px;${s.visible ? '' : 'color:var(--text-3)'}">${esc(sd.label())}</span>
+          ${moveBtns(`data-g="${g.key}" data-t="${s.tab}"`, si, (g.subs.length - 1))}
+          <label class="switch" ${locked ? `style="opacity:.45;pointer-events:none" title="${esc(t('tabCfgLockedHint'))}"` : ''}>
+            <input type="checkbox" data-cfg-vis="sub" data-g="${g.key}" data-t="${s.tab}" ${s.visible?'checked':''} ${locked?'disabled':''}>
+            <span class="track"><span class="thumb"></span></span>
+          </label>
+        </div>`;
+    }).join('') : '';
+    return `
+      <div class="tabcfg-group" style="border:1px solid var(--stroke);border-radius:12px;padding:8px;background:var(--sf)">
+        <div style="display:flex;align-items:center;gap:8px;padding:4px 6px">
+          <span style="font-size:15px">${def.ic}</span>
+          <span style="flex:1;font-size:13.5px;font-weight:600;${g.visible ? '' : 'color:var(--text-3)'}">${esc(def.label())}</span>
+          ${moveBtns(`data-g="${g.key}"`, gi, lastG)}
+          <label class="switch" ${lockedGroup ? `style="opacity:.45;pointer-events:none" title="${esc(t('tabCfgLockedHint'))}"` : ''}>
+            <input type="checkbox" data-cfg-vis="group" data-g="${g.key}" ${g.visible?'checked':''} ${lockedGroup?'disabled':''}>
+            <span class="track"><span class="thumb"></span></span>
+          </label>
+        </div>
+        ${subRows ? `<div style="display:flex;flex-direction:column;gap:6px;margin-top:8px">${subRows}</div>` : ''}
+      </div>`;
+  }).join('');
+}
+
+function refreshTabCfgList(){
+  const list = $('#tabcfg-list');
+  if (list) list.innerHTML = renderTabCfgList();
+}
+
+/** 提交变更：立即应用到侧边栏 + 持久化（silent=true 时不弹提示） */
+async function commitTabCfg(silent){
+  applyTabConfig(tabConfig);
+  refreshTabCfgList();
+  try {
+    await persistTabConfig(tabConfig);
+    if (!silent) toast(t('tabCfgSaved'));
+  } catch (err) {
+    toast(err.message, 'err');
+  }
+}
+
+function moveTabCfgGroup(key, dir){
+  const arr = tabConfig.groups;
+  const i = arr.findIndex(g => g.key === key);
+  if (i < 0) return;
+  const j = dir === 'up' ? i - 1 : i + 1;
+  if (j < 0 || j >= arr.length) return;
+  [arr[i], arr[j]] = [arr[j], arr[i]];
+  commitTabCfg(true);
+}
+
+function moveTabCfgSub(gKey, tab, dir){
+  const g = tabConfig.groups.find(x => x.key === gKey);
+  if (!g || !g.subs) return;
+  const i = g.subs.findIndex(s => s.tab === tab);
+  if (i < 0) return;
+  const j = dir === 'up' ? i - 1 : i + 1;
+  if (j < 0 || j >= g.subs.length) return;
+  [g.subs[i], g.subs[j]] = [g.subs[j], g.subs[i]];
+  commitTabCfg(true);
+}
+
+function toggleTabCfgVis(cb){
+  const on = cb.checked;
+  if (cb.dataset.cfgVis === 'group'){
+    const g = tabConfig.groups.find(x => x.key === cb.dataset.g);
+    if (!g) return;
+    if ((g.subs || []).some(s => LOCKED_TABS.has(s.tab))) { cb.checked = true; return; }
+    g.visible = on;
+  } else {
+    const g = tabConfig.groups.find(x => x.key === cb.dataset.g);
+    if (!g || !g.subs) return;
+    const s = g.subs.find(x => x.tab === cb.dataset.t);
+    if (!s) return;
+    if (LOCKED_TABS.has(s.tab)) { cb.checked = true; return; }
+    s.visible = on;
+  }
+  commitTabCfg(true);
+}
+
+function exportTabCfg(){
+  const data = { version: 1, type: 'admin-tab-config', groups: tabConfig.groups };
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'admin-tab-config.json';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  toast(t('tabCfgExportOk'));
+}
+
+async function importTabCfgFile(e){
+  const file = e.target.files && e.target.files[0];
+  e.target.value = '';
+  if (!file) return;
+  try {
+    const obj = JSON.parse(await file.text());
+    // 兼容导出格式 { version, type, groups } 和包装格式 { admin_tab_config: { groups } }
+    const src = obj && obj.admin_tab_config ? obj.admin_tab_config : obj;
+    if (!src || !Array.isArray(src.groups)) throw new Error('groups');
+    applyTabConfig(normalizeTabConfig(src));
+    refreshTabCfgList();
+    await persistTabConfig(tabConfig);
+    toast(t('tabCfgImportOk'));
+  } catch (err) {
+    toast(t('tabCfgImportFail') + ': ' + (err && err.message ? err.message : ''), 'err');
+  }
+}
+
+async function resetTabCfg(){
+  if (!(await confirmDialog(t('tabCfgResetT'), t('tabCfgResetD'), false))) return;
+  applyTabConfig(normalizeTabConfig(null));
+  refreshTabCfgList();
+  try {
+    await persistTabConfig(tabConfig);
+    toast(t('tabCfgSaved'));
+  } catch (err) {
+    toast(err.message, 'err');
+  }
+}
+
+function initTabCfgUI(){
+  const root = $('#tabcfg-group');
+  if (!root || root.dataset.bound) return;
+  root.dataset.bound = '1';
+  root.addEventListener('click', (e) => {
+    const mv = e.target.closest('[data-cfg-move]');
+    if (mv){
+      const dir = mv.dataset.cfgMove;
+      if (mv.dataset.t) moveTabCfgSub(mv.dataset.g, mv.dataset.t, dir);
+      else moveTabCfgGroup(mv.dataset.g, dir);
+      return;
+    }
+    if (e.target.closest('#tabcfg-export')) { exportTabCfg(); return; }
+    if (e.target.closest('#tabcfg-import')) { $('#tabcfg-file')?.click(); return; }
+    if (e.target.closest('#tabcfg-reset')) { resetTabCfg(); return; }
+  });
+  root.addEventListener('change', (e) => {
+    const cb = e.target.closest('input[data-cfg-vis]');
+    if (cb) toggleTabCfgVis(cb);
+  });
+  $('#tabcfg-file')?.addEventListener('change', importTabCfgFile);
+}
+
 async function loadSettings(){
   const [s, twofaStatus, dbStatus] = await Promise.all([
     api('/api/admin/settings'),
@@ -3588,7 +3949,8 @@ async function loadSettings(){
         <button class="btn sm ${dbStatus && dbStatus.healthy ? '' : 'primary'}" id="db-repair">${esc(t('dbRepairBtn'))}</button>
       </div>
     </div>
-    <button class="btn primary" id="st-save" style="padding:14px 28px;font-size:15px;border-radius:18px">${esc(t('save'))}</button>`;
+    <button class="btn primary" id="st-save" style="padding:14px 28px;font-size:15px;border-radius:18px">${esc(t('save'))}</button>
+    ${renderTabCfgSection()}`;
 
   // ── 数据库工具按钮 ──
   $('#db-refresh')?.addEventListener('click', () => loadSettings());
@@ -4023,6 +4385,9 @@ async function loadSettings(){
       showRecoveryCodes(r.recovery_codes);
     }catch(err){ toast(err.message, 'err'); }
   });
+
+  // ── 后台标签页自定义 ──
+  initTabCfgUI();
 }
 
 function promptAdminKey(){

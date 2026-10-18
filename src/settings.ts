@@ -157,6 +157,14 @@ export interface Settings {
   // ═══════ UI 主题 ═══════
   /** 管理后台 UI 主题："light"（默认白色 Apple 风格）或 "dark"（深色原风格） */
   uiTheme: "light" | "dark";
+
+  // ═══════ 后台标签页自定义 ═══════
+  /**
+   * 管理后台侧边栏标签页的显示与排序配置（JSON 字符串）。
+   * 空字符串 = 使用默认布局。结构：
+   *   { version: 1, groups: [ { key, visible, subs?: [ { tab, visible } ] } ] }
+   */
+  adminTabConfig: string;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -219,6 +227,8 @@ export const DEFAULT_SETTINGS: Settings = {
   webdavRootPath: "/",
   // UI 主题 —— 默认白色 Apple 风格
   uiTheme: "light",
+  // 后台标签页自定义 —— 默认空串 = 使用默认布局
+  adminTabConfig: "",
 };
 
 function toInt(v: unknown, fallback: number): number {
@@ -310,6 +320,8 @@ export async function getSettings(env: Env): Promise<Settings> {
     webdavRootPath: map.get("webdav_root_path") ?? DEFAULT_SETTINGS.webdavRootPath,
     // UI 主题
     uiTheme: (map.get("ui_theme") ?? DEFAULT_SETTINGS.uiTheme) as Settings["uiTheme"],
+    // 后台标签页自定义
+    adminTabConfig: map.get("admin_tab_config") ?? "",
   };
 
   // ② 写入内存缓存
