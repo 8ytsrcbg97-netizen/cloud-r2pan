@@ -979,7 +979,7 @@ const I18N = {
     cancel: '取消',
     // 全球分布
     globalTitle: '🌍 全球下载分布',
-    globalSub: '地球仪上蓝色越深代表下载量越大，鼠标悬停显示国家和具体数量。',
+    globalSub: '可自由拖动旋转的 3D 地球仪，圆点越大代表下载量越高，鼠标悬停显示国家译名、数量与时区。',
     globalDays: '统计天数',
     globalTotalDownloads: '总下载',
     globalTotalBytes: '总流量',
@@ -990,6 +990,8 @@ const I18N = {
     globalBytes: '流量',
     globalUniqueIps: '独立 IP',
     globalUniqueFiles: '文件数',
+    globalTimezone: '时区',
+    globalDragHint: '拖动旋转 · 滚轮缩放 · 悬停圆点查看国家详情',
     globalGeoSource: '数据来源：D1 下载日志（国家代码）',
     globalAnalyticsHint: '启用 Cloudflare Analytics Engine 后可显示精确经纬度',
     // 激活码
@@ -1393,7 +1395,7 @@ const I18N = {
     custom: 'Custom',
     // Global Distribution
     globalTitle: '🌍 Global Download Distribution',
-    globalSub: 'Blue countries have more downloads. Hover over a country for exact numbers.',
+    globalSub: 'A freely draggable 3D globe. Bigger dots mean more downloads. Hover a country for its translated name, numbers and timezone.',
     globalDays: 'Time Range (days)',
     globalTotalDownloads: 'Total Downloads',
     globalTotalBytes: 'Total Traffic',
@@ -1404,6 +1406,8 @@ const I18N = {
     globalBytes: 'Traffic',
     globalUniqueIps: 'Unique IPs',
     globalUniqueFiles: 'Files',
+    globalTimezone: 'Timezone',
+    globalDragHint: 'Drag to rotate · Scroll to zoom · Hover a dot for details',
     globalGeoSource: 'Data source: D1 download logs (country code)',
     globalAnalyticsHint: 'Bind Cloudflare Analytics Engine for precise lat/lng data',
     // Activation Codes
@@ -3001,12 +3005,14 @@ let echartsLoadingPromise = null;
 let globalDays = 30;
 let globeChart = null;
 
-/** 动态加载 ECharts + echarts-gl + world-atlas（首次进入全球分布 Tab 时才加载） */
+/** 动态加载 ECharts + echarts-gl（首次进入全球分布 Tab 时才加载） */
 function ensureECharts(){
   if (echartsLoaded) return Promise.resolve();
   if (echartsLoadingPromise) return echartsLoadingPromise;
   echartsLoadingPromise = new Promise((resolve, reject) => {
-    // 按顺序加载：echarts → echarts-gl → world-atlas 地图数据
+    // 按顺序加载：echarts → echarts-gl。
+    // 3D 地球仪（globe）使用贴图 + scatter3D，不再依赖任何地图 GeoJSON，
+    // 因此这里不需要加载 world.js（少一次请求，也少一个可能失败的点）。
     const loadScript = (src, cb) => {
       const s = document.createElement('script');
       s.src = src;
@@ -3016,16 +3022,8 @@ function ensureECharts(){
     };
     loadScript('https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js', () => {
       loadScript('https://cdn.jsdelivr.net/npm/echarts-gl@2.0.9/dist/echarts-gl.min.js', () => {
-        // 世界地图数据必须用「自带 registerMap」的脚本加载。
-        // echarts@5 的 npm 包已不再附带地图数据，echarts@5.5.1/map/json/world.json
-        // 在 CDN 上是 404 —— 旧代码正是加载这个 404 文件，导致整个图表库加载失败、
-        // 地球仪永远渲染不出来（"Failed to load chart library"）。
-        // echarts@4.9.0 的 map/js/world.js 会在加载时自动调用 echarts.registerMap('world', …)，
-        // 注册进全局的 echarts（v5），后续直接用 map:'world' 即可。
-        loadScript('https://cdn.jsdelivr.net/npm/echarts@4.9.0/map/js/world.js', () => {
-          echartsLoaded = true;
-          resolve();
-        });
+        echartsLoaded = true;
+        resolve();
       });
     });
   });
@@ -3061,10 +3059,63 @@ function countryName(code){
   return COUNTRY_NAMES[code + '_EN'] || code;
 }
 
+/** 常见国家的代表时区（IANA）；未收录的国家按经度粗略推算固定时区 */
+const COUNTRY_TZ = {
+  US:'America/New_York', CA:'America/Toronto', MX:'America/Mexico_City', BR:'America/Sao_Paulo',
+  AR:'America/Argentina/Buenos_Aires', CL:'America/Santiago', CO:'America/Bogota', PE:'America/Lima',
+  GB:'Europe/London', IE:'Europe/Dublin', PT:'Europe/Lisbon', FR:'Europe/Paris', DE:'Europe/Berlin',
+  ES:'Europe/Madrid', IT:'Europe/Rome', NL:'Europe/Amsterdam', BE:'Europe/Brussels', CH:'Europe/Zurich',
+  AT:'Europe/Vienna', SE:'Europe/Stockholm', NO:'Europe/Oslo', DK:'Europe/Copenhagen', FI:'Europe/Helsinki',
+  PL:'Europe/Warsaw', CZ:'Europe/Prague', HU:'Europe/Budapest', RO:'Europe/Bucharest', GR:'Europe/Athens',
+  UA:'Europe/Kyiv', RU:'Europe/Moscow', TR:'Europe/Istanbul',
+  CN:'Asia/Shanghai', HK:'Asia/Hong_Kong', TW:'Asia/Taipei', JP:'Asia/Tokyo', KR:'Asia/Seoul',
+  SG:'Asia/Singapore', MY:'Asia/Kuala_Lumpur', TH:'Asia/Bangkok', VN:'Asia/Ho_Chi_Minh', ID:'Asia/Jakarta',
+  PH:'Asia/Manila', IN:'Asia/Kolkata', PK:'Asia/Karachi', BD:'Asia/Dhaka', LK:'Asia/Colombo',
+  NP:'Asia/Kathmandu', MM:'Asia/Yangon', KH:'Asia/Phnom_Penh', AE:'Asia/Dubai', SA:'Asia/Riyadh',
+  QA:'Asia/Qatar', KW:'Asia/Kuwait', IL:'Asia/Jerusalem', IR:'Asia/Tehran', IQ:'Asia/Baghdad',
+  ZA:'Africa/Johannesburg', EG:'Africa/Cairo', NG:'Africa/Lagos', KE:'Africa/Nairobi', MA:'Africa/Casablanca',
+  AU:'Australia/Sydney', NZ:'Pacific/Auckland',
+};
+
+/** 返回 { label: 'UTC+8', time: '当前当地时间 HH:MM' } */
+function tzInfo(code, lng){
+  const now = new Date();
+  const zone = COUNTRY_TZ[code];
+  if (zone) {
+    try {
+      const parts = new Intl.DateTimeFormat('en-US', { timeZone: zone, timeZoneName: 'shortOffset' }).formatToParts(now);
+      const tzn = parts.find(p => p.type === 'timeZoneName');
+      const label = tzn ? tzn.value.replace('GMT', 'UTC') : zone;
+      const time = new Intl.DateTimeFormat('en-GB', { timeZone: zone, hour: '2-digit', minute: '2-digit', hour12: false }).format(now);
+      return { label, time };
+    } catch (_) { /* 回退到经度推算 */ }
+  }
+  const off = Math.max(-12, Math.min(14, Math.round((lng || 0) / 15)));
+  const label = 'UTC' + (off >= 0 ? '+' : '-') + Math.abs(off);
+  const utcMs = now.getTime() + now.getTimezoneOffset() * 60000;
+  const t = new Date(utcMs + off * 3600000);
+  const time = String(t.getHours()).padStart(2, '0') + ':' + String(t.getMinutes()).padStart(2, '0');
+  return { label, time };
+}
+
+/** 下载量热度 → 颜色（低=深蓝，高=浅蓝） */
+function heatColor(t){
+  t = Math.max(0, Math.min(1, t || 0));
+  const stops = [[0,30,58,95],[0.25,37,99,235],[0.5,59,130,246],[0.75,96,165,250],[1,191,219,254]];
+  for (let i = 1; i < stops.length; i++) {
+    if (t <= stops[i][0]) {
+      const a = stops[i-1], b = stops[i];
+      const k = (t - a[0]) / ((b[0] - a[0]) || 1);
+      return `rgb(${Math.round(a[1]+(b[1]-a[1])*k)},${Math.round(a[2]+(b[2]-a[2])*k)},${Math.round(a[3]+(b[3]-a[3])*k)})`;
+    }
+  }
+  return 'rgb(191,219,254)';
+}
+
 async function loadGlobal(){
   const days = globalDays || 30;
   const v = $('#view');
-  v.innerHTML = `<div class="glass section" style="padding:24px"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px"><div><h2 style="margin:0;font-size:18px">${esc(t('globalTitle'))}</h2><div style="color:var(--text-3);font-size:12.5px;margin-top:4px">${esc(t('globalSub'))}</div></div><div style="display:flex;gap:8px;align-items:center"><span style="color:var(--text-3);font-size:13px">${esc(t('globalDays'))}</span><select id="g-days" class="sel">${[7,14,30,90,365].map(d=>`<option value="${d}"${d===days?' selected':''}>${d}${LANG==='zh'?' 天':'d'}</option>`).join('')}</select></div></div><div id="globe" style="width:100%;height:520px;border-radius:16px;background:linear-gradient(135deg,#0a0d20 0%,#0f1629 100%)"></div><div id="global-totals" style="display:flex;gap:16px;margin-top:16px"></div><div id="global-table-wrap" style="margin-top:16px"></div></div>`;
+  v.innerHTML = `<div class="glass section" style="padding:24px"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px"><div><h2 style="margin:0;font-size:18px">${esc(t('globalTitle'))}</h2><div style="color:var(--text-3);font-size:12.5px;margin-top:4px">${esc(t('globalSub'))}</div></div><div style="display:flex;gap:8px;align-items:center"><span style="color:var(--text-3);font-size:13px">${esc(t('globalDays'))}</span><select id="g-days" class="sel">${[7,14,30,90,365].map(d=>`<option value="${d}"${d===days?' selected':''}>${d}${LANG==='zh'?' 天':'d'}</option>`).join('')}</select></div></div><div id="globe" style="width:100%;height:520px;border-radius:16px;background:radial-gradient(circle at 50% 45%,#0b1226 0%,#070a14 70%);cursor:grab"></div><div style="margin-top:8px;color:var(--text-3);font-size:12px;text-align:center">${esc(t('globalDragHint'))}</div><div id="global-totals" style="display:flex;gap:16px;margin-top:16px"></div><div id="global-table-wrap" style="margin-top:16px"></div></div>`;
   $('#g-days').onchange = e => { globalDays = Number(e.target.value); loadGlobal(); };
 
   const data = await api('/api/admin/global/stats?since_days=' + days);
@@ -3079,6 +3130,7 @@ async function loadGlobal(){
 
   // 空数据提示
   if (!countries.length) {
+    if (globeChart) { try { globeChart.dispose(); } catch (_) {} globeChart = null; }
     $('#globe').innerHTML = `<div style="height:100%;display:flex;align-items:center;justify-content:center;color:var(--text-3);font-size:14px">${esc(t('globalEmpty'))}</div>`;
     $('#global-table-wrap').innerHTML = `<div class="empty"><div class="icon">🌍</div>${esc(t('globalEmpty'))}</div>`;
     return;
@@ -3092,11 +3144,10 @@ async function loadGlobal(){
     return;
   }
 
-  // 世界地图已在 ensureECharts() 加载 world.js 时自动注册，这里无需再注册；
-  // 用 registerMap('world', null) 反而会把已注册的地图覆盖成空。
+  // echarts-gl 的 3D 地球仪（globe）用 baseTexture 地球贴图 + scatter3D 点位系列，
+  // 不再使用平面 map/geo 配置，也不再需要世界地图 GeoJSON。
 
-  // 准备 ECharts data：[{name: countryName, value: [lng, lat, downloads, bytes]}]
-  // 从 cf-ipcountry 的国家代码 → 大致经纬度（粗略定位）
+  // cf-ipcountry 国家代码 → 大致经纬度（用于在球面定位散点）
   const approxGeo = {
     'US': [-97, 38], 'CN': [104, 35], 'JP': [138, 36], 'KR': [127, 36], 'GB': [-2, 54], 'DE': [10, 51],
     'FR': [2, 46], 'CA': [-106, 56], 'AU': [134, -25], 'BR': [-52, -15], 'IN': [78, 22], 'RU': [90, 62],
@@ -3109,96 +3160,99 @@ async function loadGlobal(){
     'UA': [32, 49], 'CZ': [16, 49], 'HU': [19, 47], 'RO': [25, 46], 'BG': [25, 42], 'HR': [16, 45],
     'RS': [21, 44], 'SK': [19, 49], 'SI': [14, 46], 'LT': [24, 55], 'LV': [24, 56], 'EE': [26, 58],
     'IS': [-18, 64], 'LU': [6, 49], 'QA': [51, 25], 'KW': [47, 29], 'PK': [70, 30], 'BD': [90, 24],
-    'LK': [81, 7], 'MM': [95, 21], 'KH': [105, 12], 'ZZ': [0, 0], 'XX': [0, 0],
+    'LK': [81, 7], 'MM': [95, 21], 'KH': [105, 12],
   };
   const maxDownloads = Math.max(...countries.map(c => c.downloads), 1);
-  const globeData = countries.map(c => {
-    const geo = approxGeo[c.country] || [0, 0];
-    return {
-      name: countryName(c.country),
-      value: [...geo, c.downloads, c.bytes],
-      downloads: c.downloads,
-      bytes: c.bytes,
-      unique_ips: c.unique_ips,
-      unique_files: c.unique_files,
-    };
-  });
+
+  // 组装地球仪数据（未知/未分类不落点）
+  const globeData = countries
+    .filter(c => c.country !== 'ZZ' && c.country !== 'XX' && approxGeo[c.country])
+    .map(c => {
+      const [lng, lat] = approxGeo[c.country];
+      return {
+        name: countryName(c.country),
+        code: c.country,
+        lng, lat,
+        value: [lng, lat, c.downloads],
+        downloads: c.downloads,
+        bytes: c.bytes,
+        unique_ips: c.unique_ips,
+        unique_files: c.unique_files,
+        itemStyle: { color: heatColor(c.downloads / maxDownloads) },
+      };
+    });
+
+  // 重建前先销毁旧实例，避免重复 init 与 resize 监听泄漏
+  if (globeChart) { try { globeChart.dispose(); } catch (_) {} globeChart = null; }
 
   const chart = echarts.init($('#globe'));
   chart.setOption({
     backgroundColor: 'transparent',
     tooltip: {
       trigger: 'item',
-      backgroundColor: 'rgba(15,22,41,0.92)',
+      backgroundColor: 'rgba(15,22,41,0.94)',
       borderColor: 'rgba(99,179,237,0.4)',
       borderWidth: 1,
+      padding: [10, 14],
       textStyle: { color: '#e2e8f0', fontSize: 13 },
       formatter: (p) => {
-        if (p.componentType === 'series') {
-          const d = p.data;
-          return `<div style="font-weight:600;margin-bottom:6px">${d.name}</div>
-            <div>${esc(t('globalDownloads'))}: <b>${d.downloads}</b></div>
-            <div>${esc(t('globalBytes'))}: <b>${fmtSize(d.bytes)}</b></div>
-            <div>${esc(t('globalUniqueIps'))}: <b>${d.unique_ips}</b></div>`;
-        }
-        return p.name;
+        const d = p.data || {};
+        if (!d.code) return '';
+        const tz = tzInfo(d.code, d.lng);
+        return `<div style="font-weight:600;margin-bottom:6px">${esc(d.name)} <span style="color:#94a3b8;font-weight:400;font-size:11px">${esc(d.code)}</span></div>
+          <div>${esc(t('globalDownloads'))}: <b>${d.downloads}</b></div>
+          <div>${esc(t('globalBytes'))}: <b>${fmtSize(d.bytes)}</b></div>
+          <div>${esc(t('globalUniqueIps'))}: <b>${d.unique_ips}</b></div>
+          <div style="margin-top:5px;color:#93c5fd">🕒 ${esc(t('globalTimezone'))}: <b>${esc(tz.label)}</b> · ${esc(tz.time)}</div>`;
       }
     },
-    visualMap: {
-      min: 1, max: maxDownloads,
-      left: 16, bottom: 40,
-      text: [LANG==='zh'?'高':'High', LANG==='zh'?'低':'Low'],
-      calculable: true,
-      inRange: { color: ['#1e3a5f', '#2563eb', '#3b82f6', '#60a5fa', '#93c5fd', '#dbeafe'] },
-      textStyle: { color: '#94a3b8' }
+    globe: {
+      // 纹理用 CORS 友好的 CDN（jsdelivr 返回 access-control-allow-origin: *）。
+      // echarts-gl 以 crossOrigin=anonymous 加载纹理，缺少 CORS 头会导致 WebGL 贴图失败、地球变纯色球。
+      baseTexture: 'https://cdn.jsdelivr.net/gh/vasturiano/three-globe/example/img/earth-dark.jpg',
+      shading: 'color',
+      environment: 'auto',
+      atmosphere: { show: true, color: '#3b82f6', glowPower: 4, innerGlowPower: 2 },
+      viewControl: {
+        autoRotate: false,       // 可随意拖动，松手后保持当前视角
+        rotateSensitivity: 1,
+        zoomSensitivity: 1.5,
+        panSensitivity: 0,
+      },
     },
     series: [{
-      type: 'map',
-      map: 'world',
-      name: LANG==='zh'?'下载分布':'Downloads',
-      roam: true,
-      zoom: 1.2,
-      scaleLimit: { min: 0.8, max: 4 },
-      label: { show: false },
+      type: 'scatter3D',
+      coordinateSystem: 'globe',
+      name: LANG === 'zh' ? '下载分布' : 'Downloads',
+      symbolSize: (val) => {
+        const d = (val && val[2]) || 0;
+        return Math.max(7, Math.min(34, 7 + Math.sqrt(d / maxDownloads) * 27));
+      },
       itemStyle: {
-        areaColor: '#1e293b',
-        borderColor: '#334155',
-        borderWidth: 0.5,
+        opacity: 0.92,
+        borderWidth: 1,
+        borderColor: 'rgba(255,255,255,0.6)',
       },
-      emphasis: {
-        label: { show: true, color: '#f1f5f9' },
-        itemStyle: { areaColor: '#0ea5e9', borderColor: '#38bdf8', borderWidth: 1 }
-      },
-      data: globeData.map(d => ({ name: d.name, value: d.downloads, ...d })),
-    },{
-      type: 'scatter',
-      coordinateSystem: 'geo',
-      name: LANG==='zh'?'热点':'Hotspots',
-      symbolSize: (val) => Math.max(4, Math.min(30, Math.sqrt(val[2] / maxDownloads) * 30)),
-      itemStyle: { color: '#0ea5e9', shadowBlur: 10, shadowColor: '#0ea5e9' },
-      data: globeData.map(d => ({ name: d.name, value: d.value, ...d })),
+      data: globeData,
+      emphasis: { itemStyle: { opacity: 1 } },
     }],
-    geo: {
-      map: 'world',
-      roam: true,
-      zoom: 1.2,
-      scaleLimit: { min: 0.8, max: 4 },
-      itemStyle: { areaColor: '#1e293b', borderColor: '#334155' },
-      emphasis: { itemStyle: { areaColor: '#0ea5e9' } },
-    }
   });
-  // resize handler
   globeChart = chart;
-  window.addEventListener('resize', () => chart.resize());
+  if (window.__globeResize) window.removeEventListener('resize', window.__globeResize);
+  window.__globeResize = () => { try { chart.resize(); } catch (_) {} };
+  window.addEventListener('resize', window.__globeResize);
 
   // 国家排行表格
   const rows = countries.slice(0, 20).map(c => {
     const pct = Math.round((c.downloads / maxDownloads) * 100);
+    const g = approxGeo[c.country];
+    const z = tzInfo(c.country, g ? g[0] : 0);
     return `<tr>
       <td>${countryName(c.country)} <span style="color:var(--text-3);font-size:11px">${c.country}</span></td>
       <td class="num">${c.downloads}</td>
       <td class="num">${fmtSize(c.bytes)}</td>
       <td class="num">${c.unique_ips}</td>
+      <td class="num" style="white-space:nowrap">${esc(z.label)} <span style="color:var(--text-3)">${esc(z.time)}</span></td>
       <td><div class="progress"><i style="width:${pct}%;background:linear-gradient(90deg,#2563eb,#60a5fa)"></i></div></td>
     </tr>`;
   }).join('');
@@ -3214,6 +3268,7 @@ async function loadGlobal(){
           <th>${esc(t('globalDownloads'))}</th>
           <th>${esc(t('globalBytes'))}</th>
           <th>${esc(t('globalUniqueIps'))}</th>
+          <th>${esc(t('globalTimezone'))}</th>
           <th>%</th>
         </tr></thead>
         <tbody>${rows}</tbody>
