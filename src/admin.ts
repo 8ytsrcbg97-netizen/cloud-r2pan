@@ -216,16 +216,17 @@ export async function handleAdminApi(
   }
 
   // ── 登录方式探测（公开，无需会话）——
-  //    登录页据此决定显示哪些「使用 XX 登录」按钮
+  //    登录页据此决定显示哪些「使用 XX 登录」按钮。
+  //    ⚠️ 故意不返回已绑定的用户名 / 昵称等身份信息：此接口对所有访客开放，
+  //       返回身份信息等于把你的第三方账号名公开，会被拿来骚扰/钓鱼。
   if (path === "/api/admin/auth-methods" && method === "GET") {
     const s = await getSettings(env);
     const cfg = parseAdminOauth(s.adminOauth);
-    const providers: Record<string, { enabled: boolean; login: string }> = {};
+    const providers: Record<string, { enabled: boolean }> = {};
     for (const id of ADMIN_OAUTH_PROVIDER_IDS) {
       const p = cfg[id];
       providers[id] = {
         enabled: p.enabled && !!p.uid && !!p.clientId && !!p.secretCipher,
-        login: p.uid ? p.login : "",
       };
     }
     return json({ providers });

@@ -1687,13 +1687,11 @@ function showLogin(){
           <span style="flex:1;height:1px;background:var(--stroke-strong)"></span>${esc(t('lmOrLogin'))}<span style="flex:1;height:1px;background:var(--stroke-strong)"></span>
         </div>
         <div style="display:flex;flex-direction:column;gap:10px">
-          ${enabledProviders.map(p => {
-            const info = authMethods.providers[p.id] || {};
-            return `<a class="btn" data-oauth-provider="${esc(p.id)}" href="javascript:void(0)" style="display:flex;align-items:center;justify-content:center;gap:10px">
+          ${enabledProviders.map(p => `
+            <a class="btn" data-oauth-provider="${esc(p.id)}" href="javascript:void(0)" style="display:flex;align-items:center;justify-content:center;gap:10px">
               ${providerIcon(p.id)}
-              ${esc(t('lmLoginBtn', { name: p.name }))}${info.login ? ' · @' + esc(info.login) : ''}
-            </a>`;
-          }).join('')}
+              ${esc(t('lmLoginBtn', { name: p.name }))}
+            </a>`).join('')}
         </div>
       </div>` : ''}
       <div class="lang-row"><button class="btn sm" id="login-lang">${esc(t('switchTo'))}</button></div>
