@@ -1687,13 +1687,11 @@ function showLogin(){
           <span style="flex:1;height:1px;background:var(--stroke-strong)"></span>${esc(t('lmOrLogin'))}<span style="flex:1;height:1px;background:var(--stroke-strong)"></span>
         </div>
         <div style="display:flex;flex-direction:column;gap:10px">
-          ${enabledProviders.map(p => {
-            const info = authMethods.providers[p.id] || {};
-            return `<a class="btn" data-oauth-provider="${esc(p.id)}" href="javascript:void(0)" style="display:flex;align-items:center;justify-content:center;gap:10px">
+          ${enabledProviders.map(p => `
+            <a class="btn" data-oauth-provider="${esc(p.id)}" href="javascript:void(0)" style="display:flex;align-items:center;justify-content:center;gap:10px">
               ${providerIcon(p.id)}
-              ${esc(t('lmLoginBtn', { name: p.name }))}${info.login ? ' · @' + esc(info.login) : ''}
-            </a>`;
-          }).join('')}
+              ${esc(t('lmLoginBtn', { name: p.name }))}
+            </a>`).join('')}
         </div>
       </div>` : ''}
       <div class="lang-row"><button class="btn sm" id="login-lang">${esc(t('switchTo'))}</button></div>
@@ -3018,7 +3016,13 @@ function ensureECharts(){
     };
     loadScript('https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js', () => {
       loadScript('https://cdn.jsdelivr.net/npm/echarts-gl@2.0.9/dist/echarts-gl.min.js', () => {
-        loadScript('https://cdn.jsdelivr.net/npm/echarts@5.5.1/map/json/world.json', () => {
+        // 世界地图数据必须用「自带 registerMap」的脚本加载。
+        // echarts@5 的 npm 包已不再附带地图数据，echarts@5.5.1/map/json/world.json
+        // 在 CDN 上是 404 —— 旧代码正是加载这个 404 文件，导致整个图表库加载失败、
+        // 地球仪永远渲染不出来（"Failed to load chart library"）。
+        // echarts@4.9.0 的 map/js/world.js 会在加载时自动调用 echarts.registerMap('world', …)，
+        // 注册进全局的 echarts（v5），后续直接用 map:'world' 即可。
+        loadScript('https://cdn.jsdelivr.net/npm/echarts@4.9.0/map/js/world.js', () => {
           echartsLoaded = true;
           resolve();
         });
@@ -3088,8 +3092,8 @@ async function loadGlobal(){
     return;
   }
 
-  // 注册世界地图（echarts-gl 需要 world GeoJSON）
-  try { echarts.registerMap('world', window.WORLD_ATLAS || null); } catch(e) {}
+  // 世界地图已在 ensureECharts() 加载 world.js 时自动注册，这里无需再注册；
+  // 用 registerMap('world', null) 反而会把已注册的地图覆盖成空。
 
   // 准备 ECharts data：[{name: countryName, value: [lng, lat, downloads, bytes]}]
   // 从 cf-ipcountry 的国家代码 → 大致经纬度（粗略定位）
