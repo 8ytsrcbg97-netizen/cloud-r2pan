@@ -26,7 +26,7 @@ export function addSecurityHeaders(headers: Headers, opts: { isDownload?: boolea
         "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net",
         "frame-src 'self' https://challenges.cloudflare.com",
         "connect-src 'self' https://challenges.cloudflare.com https://api.github.com https://api.google.com https://graph.microsoft.com https://discord.com",
-        // ECharts 需要加载世界地图 GeoJSON
+        // ECharts 3D 地球仪需要加载地球纹理贴图（图片）
         "img-src 'self' data: https: https://cdn.jsdelivr.net",
         "form-action 'self'",
         "base-uri 'self'",
