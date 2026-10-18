@@ -1,14 +1,15 @@
 import type { Env } from "./types";
 import { ensureSchema, randomId, getSchemaStatus, repairDatabase } from "./db";
 import { generateCodes, makeBatchId, formatCodeStatus, findCodeByString } from "./codes";
-import { getSettings, updateSettings } from "./settings";
+import { getSettings, updateSettings, parseAdminOauth, serializeAdminOauth, ADMIN_OAUTH_PROVIDER_IDS } from "./settings";
 import { checkAdminKey, createSession, verifySession, clientIp, rateLimitLogin, requireAdminIp } from "./auth";
 import { pickLang } from "./i18n";
 import { hashPassword } from "./public";
 import { parseUA } from "./ua";
 import { encryptSecret, decryptSecret, totpGenerateSecret, totpVerify, totpUri, totpGenerateRecoveryCodes, sha256Hex, safeEqual } from "./crypto";
 import { createStorageProvider, type StorageProvider } from "./storage";
-import { buildAdminGitHubAuthorizeUrl, ADMIN_OAUTH_INTENT_BIND } from "./admin_oauth";
+import { buildAdminOauthAuthorizeUrl, ADMIN_OAUTH_INTENT_BIND, isAdminOauthProvider, adminOauthCallbackUrl } from "./admin_oauth";
+import { getBuiltinProvider } from "./oauth";
 
 /** 懒加载 StorageProvider —— 每次需要时从 settings 构造（settings 有 5s 缓存，成本低） */
 let _storagePromise: Promise<StorageProvider> | null = null;
@@ -215,15 +216,19 @@ export async function handleAdminApi(
   }
 
   // ── 登录方式探测（公开，无需会话）——
-  //    登录页据此决定是否显示「使用 GitHub 登录」按钮
+  //    登录页据此决定显示哪些「使用 XX 登录」按钮
   if (path === "/api/admin/auth-methods" && method === "GET") {
     const s = await getSettings(env);
-    return json({
-      github: {
-        enabled: s.adminGhLoginEnabled && !!s.adminGhUid && !!s.adminGhClientId && !!s.adminGhClientSecretCipher,
-        login: s.adminGhLogin,
-      },
-    });
+    const cfg = parseAdminOauth(s.adminOauth);
+    const providers: Record<string, { enabled: boolean; login: string }> = {};
+    for (const id of ADMIN_OAUTH_PROVIDER_IDS) {
+      const p = cfg[id];
+      providers[id] = {
+        enabled: p.enabled && !!p.uid && !!p.clientId && !!p.secretCipher,
+        login: p.uid ? p.login : "",
+      };
+    }
+    return json({ providers });
   }
 
   // ── 以下全部需要会话 ──────────────────────────────
@@ -257,69 +262,95 @@ export async function handleAdminApi(
   }
 
   // ══════════════════════════════════════════════════════════════
-  // 管理员 GitHub OAuth2 登录（安全中心）
-  //   GET    /api/admin/oauth/github              配置 + 绑定状态
-  //   PUT    /api/admin/oauth/github              保存 Client ID / Secret / 开关
-  //   POST   /api/admin/oauth/github/bind-start   生成绑定授权 URL
-  //   POST   /api/admin/oauth/github/unbind       解绑
+  // 管理员第三方 OAuth2 登录（登录方式标签页）
+  //   GET    /api/admin/login-methods               全部 Provider 配置 + 绑定状态
+  //   PUT    /api/admin/login-methods               保存某 Provider 的 Client ID / Secret / 开关
+  //   POST   /api/admin/login-methods/bind-start    生成某 Provider 的绑定授权 URL
+  //   POST   /api/admin/login-methods/unbind        解绑某 Provider
+  //
+  // ⚠️ 注意：这里刻意不用 /api/admin/oauth/providers —— 那个路径已被「访客下载鉴权」
+  //    的 OAuth2 Provider CRUD（下面的 oauth_providers 表管理）占用，两者语义完全不同，
+  //    共用会导致 GET 列表被后者覆盖（先前 GitHub 绑定相关的诡异失败部分源于此）。
   // ══════════════════════════════════════════════════════════════
-  if (path === "/api/admin/oauth/github" && method === "GET") {
+  if (path === "/api/admin/login-methods" && method === "GET") {
     const s = await getSettings(env);
-    return json({
-      client_id: s.adminGhClientId,
-      secret_configured: !!s.adminGhClientSecretCipher,
-      enabled: s.adminGhLoginEnabled,
-      bound: !!s.adminGhUid,
-      login: s.adminGhLogin,
-      name: s.adminGhName,
-      avatar: s.adminGhAvatar,
-      bound_at: s.adminGhBoundAt,
-      callback_url: `${url.origin}/admin/oauth/callback`,
-      ready: !!s.adminGhClientId && !!s.adminGhClientSecretCipher,
+    const cfg = parseAdminOauth(s.adminOauth);
+    const callbackUrl = adminOauthCallbackUrl(req);
+    const providers = ADMIN_OAUTH_PROVIDER_IDS.map((id) => {
+      const p = cfg[id];
+      const builtin = getBuiltinProvider(id);
+      return {
+        id,
+        name: builtin?.name ?? id,
+        client_id: p.clientId,
+        secret_configured: !!p.secretCipher,
+        enabled: p.enabled,
+        bound: !!p.uid,
+        login: p.uid ? p.login : "",
+        nickname: p.uid ? p.name : "",
+        avatar: p.uid ? p.avatar : "",
+        bound_at: p.uid ? p.boundAt : 0,
+        ready: !!p.clientId && !!p.secretCipher,
+        callback_url: callbackUrl,
+      };
     });
+    return json({ providers });
   }
 
-  if (path === "/api/admin/oauth/github" && method === "PUT") {
-    const body = await readJson<{ client_id?: string; client_secret?: string; enabled?: boolean }>(req);
-    const patch: Record<string, string> = {};
-    if (typeof body.client_id === "string") patch.admin_gh_client_id = body.client_id.trim();
+  if (path === "/api/admin/login-methods" && method === "PUT") {
+    const body = await readJson<{ provider?: string; client_id?: string; client_secret?: string; enabled?: boolean }>(req);
+    const providerId = String(body.provider ?? "");
+    if (!isAdminOauthProvider(providerId)) return json({ error: msg(req, "不支持的登录方式", "Unsupported provider") }, 400);
+
+    const s = await getSettings(env);
+    const cfg = parseAdminOauth(s.adminOauth);
+    const cur = cfg[providerId];
+
+    if (typeof body.client_id === "string") cur.clientId = body.client_id.trim();
     if (typeof body.client_secret === "string") {
       const raw = body.client_secret.trim();
-      if (raw === "") patch.admin_gh_client_secret_cipher = "";
-      else if (raw !== "__keep__") {
+      if (raw === "") {
+        cur.secretCipher = ""; // 显式清空
+      } else if (raw !== "__keep__") {
         const cipher = await encryptSecret(raw, env.admin);
-        if (cipher) patch.admin_gh_client_secret_cipher = cipher;
+        // 加密失败必须报错 —— 之前静默吞掉会让用户以为已保存，随后绑定必然失败
+        if (!cipher) return json({ error: msg(req, "密钥加密失败，请重试", "Failed to encrypt the secret") }, 500);
+        cur.secretCipher = cipher;
       }
     }
     if (typeof body.enabled === "boolean") {
-      // 未绑定 GitHub 时不允许开启登录，避免把自己锁在门外
-      const s = await getSettings(env);
-      if (body.enabled && !s.adminGhUid) return json({ error: msg(req, "请先绑定 GitHub 账号", "Bind a GitHub account first") }, 400);
-      patch.admin_gh_login_enabled = body.enabled ? "1" : "0";
+      // 未绑定账号时不允许开启登录，避免把自己锁在门外
+      if (body.enabled && !cur.uid) return json({ error: msg(req, "请先绑定账号", "Bind an account first") }, 400);
+      cur.enabled = body.enabled;
     }
-    await updateSettings(env, patch);
+    await updateSettings(env, { admin_oauth: serializeAdminOauth(cfg) });
     return json({ ok: true });
   }
 
-  if (path === "/api/admin/oauth/github/bind-start" && method === "POST") {
+  if (path === "/api/admin/login-methods/bind-start" && method === "POST") {
+    const body = await readJson<{ provider?: string }>(req);
+    const providerId = String(body.provider ?? "");
+    if (!isAdminOauthProvider(providerId)) return json({ error: msg(req, "不支持的登录方式", "Unsupported provider") }, 400);
+
     const s = await getSettings(env);
-    if (!s.adminGhClientId || !s.adminGhClientSecretCipher) {
-      return json({ error: msg(req, "请先保存 GitHub OAuth App 配置", "Configure the GitHub OAuth App first") }, 400);
+    const cfg = parseAdminOauth(s.adminOauth)[providerId];
+    if (!cfg.clientId || !cfg.secretCipher) {
+      return json({ error: msg(req, "请先保存该登录方式的 Client ID / Secret", "Save the Client ID / Secret first") }, 400);
     }
-    const authorizeUrl = await buildAdminGitHubAuthorizeUrl(env, req, ADMIN_OAUTH_INTENT_BIND);
+    const authorizeUrl = await buildAdminOauthAuthorizeUrl(env, req, providerId, ADMIN_OAUTH_INTENT_BIND);
     if (!authorizeUrl) return json({ error: msg(req, "无法生成授权链接", "Cannot build authorize URL") }, 500);
     return json({ ok: true, authorize_url: authorizeUrl });
   }
 
-  if (path === "/api/admin/oauth/github/unbind" && method === "POST") {
-    await updateSettings(env, {
-      admin_gh_login_enabled: "0",
-      admin_gh_uid: "",
-      admin_gh_login: "",
-      admin_gh_name: "",
-      admin_gh_avatar: "",
-      admin_gh_bound_at: "",
-    });
+  if (path === "/api/admin/login-methods/unbind" && method === "POST") {
+    const body = await readJson<{ provider?: string }>(req);
+    const providerId = String(body.provider ?? "");
+    if (!isAdminOauthProvider(providerId)) return json({ error: msg(req, "不支持的登录方式", "Unsupported provider") }, 400);
+
+    const s = await getSettings(env);
+    const cfg = parseAdminOauth(s.adminOauth);
+    cfg[providerId] = { ...cfg[providerId], enabled: false, uid: "", login: "", name: "", avatar: "", boundAt: 0 };
+    await updateSettings(env, { admin_oauth: serializeAdminOauth(cfg) });
     return json({ ok: true });
   }
 
