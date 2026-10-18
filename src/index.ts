@@ -10,7 +10,7 @@ import {
   handleOAuthLogout,
   handleOAuthProviders,
 } from "./oauth_handlers";
-import { handleAdminGitHubStart, handleAdminGitHubCallback } from "./admin_oauth";
+import { handleAdminOauthStart, handleAdminOauthCallback } from "./admin_oauth";
 import { findCodeByString, formatCodeStatus, checkCodeUsable, isCodeLenientFormat } from "./codes";
 
 /** 客户端真实 IP：从 CF 头或连接地址取 */
@@ -98,14 +98,17 @@ async function route(req: Request, env: Env, ctx: ExecutionContext): Promise<Res
     return serveAdminPage();
   }
 
-  // 管理员 GitHub OAuth2 登录 / 绑定回调（与访客下载的 /oauth/* 独立）
-  if (path === "/admin/oauth/github/start" && req.method === "GET") {
+  // 管理员第三方 OAuth2 登录 / 绑定回调（与访客下载的 /oauth/* 独立）
+  //   /admin/oauth/:provider/start   provider ∈ github / google / microsoft
+  //   /admin/oauth/callback          统一回调，Provider 编码在 state 里
+  const adminOauthStart = /^\/admin\/oauth\/([a-z]+)\/start$/.exec(path);
+  if (adminOauthStart && req.method === "GET") {
     await ensureSchema(env);
-    return handleAdminGitHubStart(req, env);
+    return handleAdminOauthStart(req, env, adminOauthStart[1]);
   }
   if (path === "/admin/oauth/callback" && req.method === "GET") {
     await ensureSchema(env);
-    return handleAdminGitHubCallback(req, env);
+    return handleAdminOauthCallback(req, env);
   }
 
   // 管理 API

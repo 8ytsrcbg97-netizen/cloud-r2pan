@@ -98,23 +98,15 @@ export interface Settings {
   /** 浮动按钮位置：top-right（右上）或 top-left（左上）。默认 top-right。 */
   codesFloatingButtonPosition: "top-right" | "top-left";
 
-  // ═══════ 管理员 GitHub OAuth2 登录 ═══════
-  /** 是否允许用 GitHub 账号登录管理后台（需先绑定 GitHub 且已配好 OAuth App）。 */
-  adminGhLoginEnabled: boolean;
-  /** GitHub OAuth App 的 Client ID（明文存，可公开） */
-  adminGhClientId: string;
-  /** GitHub OAuth App 的 Client Secret —— 用 admin AES-GCM 加密后存 */
-  adminGhClientSecretCipher: string | null;
-  /** 已绑定的 GitHub 用户 id（数字字符串），未绑定为 null */
-  adminGhUid: string | null;
-  /** 已绑定的 GitHub 用户名 (login) */
-  adminGhLogin: string | null;
-  /** 已绑定的 GitHub 显示名 */
-  adminGhName: string | null;
-  /** 已绑定的 GitHub 头像 URL */
-  adminGhAvatar: string | null;
-  /** 绑定时间戳（毫秒），未绑定为 null */
-  adminGhBoundAt: number | null;
+  // ═══════ 管理员第三方 OAuth2 登录（GitHub / Google / Microsoft） ═══════
+  /**
+   * 各 Provider 的管理员 OAuth 配置（JSON 字符串）。
+   * 由 parseAdminOauth() 解析为 AdminOauthConfig；空字符串 = 全部未配置。
+   *
+   * ⚠️ 兼容旧版：老库只有单一 GitHub 配置（admin_gh_* 键），
+   *    getSettings() 会在 admin_oauth 为空时自动把旧键迁移成 GitHub 条目（只读侧迁移）。
+   */
+  adminOauth: string;
 
   // ═══════ 存储后端（R2 / S3 兼容） ═══════
   /**
@@ -157,6 +149,90 @@ export interface Settings {
   // ═══════ UI 主题 ═══════
   /** 管理后台 UI 主题："light"（默认白色 Apple 风格）或 "dark"（深色原风格） */
   uiTheme: "light" | "dark";
+
+  // ═══════ 后台标签页自定义 ═══════
+  /**
+   * 管理后台侧边栏标签页的显示与排序配置（JSON 字符串）。
+   * 空字符串 = 使用默认布局。结构：
+   *   { version: 1, groups: [ { key, visible, subs?: [ { tab, visible } ] } ] }
+   */
+  adminTabConfig: string;
+}
+
+/* ═══════════ 管理员第三方 OAuth 配置 ═══════════
+ * 每个 Provider 一份配置，聚合存进 settings.admin_oauth（JSON 字符串）。
+ * 目前支持 GitHub / Google / Microsoft 三家。
+ */
+
+/** 支持的管理员 OAuth Provider id（顺序即前端展示顺序） */
+export const ADMIN_OAUTH_PROVIDER_IDS = ["github", "google", "microsoft"] as const;
+export type AdminOauthProviderId = (typeof ADMIN_OAUTH_PROVIDER_IDS)[number];
+
+/** 单个 Provider 的管理员 OAuth 配置 */
+export interface AdminOauthProviderCfg {
+  /** OAuth App 的 Client ID（明文存，可公开） */
+  clientId: string;
+  /** Client Secret —— 用 admin AES-GCM 加密后存；空串 = 未配置 */
+  secretCipher: string;
+  /** 是否允许用该 Provider 登录后台（需先绑定且已配置） */
+  enabled: boolean;
+  /** 已绑定的第三方用户 id（字符串），空串 = 未绑定 */
+  uid: string;
+  /** 已绑定的第三方用户名 / 登录名 */
+  login: string;
+  /** 已绑定的显示名 */
+  name: string;
+  /** 已绑定的头像 URL */
+  avatar: string;
+  /** 绑定时间戳（毫秒），0 = 未绑定 */
+  boundAt: number;
+}
+
+/** 全部 Provider 的配置集合 */
+export type AdminOauthConfig = Record<string, AdminOauthProviderCfg>;
+
+/** 空的单 Provider 配置 */
+export function emptyAdminOauthProvider(): AdminOauthProviderCfg {
+  return { clientId: "", secretCipher: "", enabled: false, uid: "", login: "", name: "", avatar: "", boundAt: 0 };
+}
+
+/** 解析 admin_oauth JSON；非法 / 缺字段时回退为空默认值，保证始终返回完整结构 */
+export function parseAdminOauth(raw: string): AdminOauthConfig {
+  const out: AdminOauthConfig = {};
+  for (const id of ADMIN_OAUTH_PROVIDER_IDS) out[id] = emptyAdminOauthProvider();
+  if (!raw) return out;
+  try {
+    const j = JSON.parse(raw) as { providers?: Record<string, Partial<AdminOauthProviderCfg>> };
+    const providers = j?.providers;
+    if (providers && typeof providers === "object") {
+      for (const id of ADMIN_OAUTH_PROVIDER_IDS) {
+        const p = providers[id];
+        if (p && typeof p === "object") {
+          const base = out[id];
+          out[id] = {
+            clientId: typeof p.clientId === "string" ? p.clientId : base.clientId,
+            secretCipher: typeof p.secretCipher === "string" ? p.secretCipher : base.secretCipher,
+            enabled: typeof p.enabled === "boolean" ? p.enabled : base.enabled,
+            uid: typeof p.uid === "string" ? p.uid : base.uid,
+            login: typeof p.login === "string" ? p.login : base.login,
+            name: typeof p.name === "string" ? p.name : base.name,
+            avatar: typeof p.avatar === "string" ? p.avatar : base.avatar,
+            boundAt: typeof p.boundAt === "number" ? p.boundAt : base.boundAt,
+          };
+        }
+      }
+    }
+  } catch {
+    /* 非法 JSON —— 返回全默认 */
+  }
+  return out;
+}
+
+/** 序列化回 admin_oauth JSON */
+export function serializeAdminOauth(cfg: AdminOauthConfig): string {
+  const providers: AdminOauthConfig = {};
+  for (const id of ADMIN_OAUTH_PROVIDER_IDS) providers[id] = cfg[id] ?? emptyAdminOauthProvider();
+  return JSON.stringify({ version: 1, providers });
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -191,15 +267,8 @@ export const DEFAULT_SETTINGS: Settings = {
   // 激活码浮动按钮
   codesFloatingButtonEnabled: true,
   codesFloatingButtonPosition: "top-right",
-  // 管理员 GitHub OAuth2 登录 —— 默认未配置、未绑定
-  adminGhLoginEnabled: false,
-  adminGhClientId: "",
-  adminGhClientSecretCipher: null,
-  adminGhUid: null,
-  adminGhLogin: null,
-  adminGhName: null,
-  adminGhAvatar: null,
-  adminGhBoundAt: null,
+  // 管理员第三方 OAuth2 登录 —— 默认全部未配置、未绑定
+  adminOauth: "",
   // 存储后端 —— 默认 R2（向后兼容）
   storageProvider: "r2",
   s3Endpoint: null,
@@ -219,6 +288,8 @@ export const DEFAULT_SETTINGS: Settings = {
   webdavRootPath: "/",
   // UI 主题 —— 默认白色 Apple 风格
   uiTheme: "light",
+  // 后台标签页自定义 —— 默认空串 = 使用默认布局
+  adminTabConfig: "",
 };
 
 function toInt(v: unknown, fallback: number): number {
@@ -249,6 +320,30 @@ export async function getSettings(env: Env): Promise<Settings> {
   if (storedMonth && storedMonth !== currentMonth && trafficUsedBytes > 0) {
     trafficUsedBytes = 0;
     trafficMonth = currentMonth;
+  }
+
+  // ── 管理员第三方 OAuth 配置 ──────────────────────────────
+  // 优先读新的聚合键 admin_oauth；为空时把旧的单一 GitHub 键读侧迁移成 GitHub 条目，
+  // 老部署无需手动改库即可继续使用原 GitHub 绑定与配置。
+  let adminOauth = map.get("admin_oauth") ?? "";
+  if (!adminOauth) {
+    const legacy: AdminOauthProviderCfg = {
+      clientId: map.get("admin_gh_client_id") ?? "",
+      secretCipher: map.get("admin_gh_client_secret_cipher") ?? "",
+      enabled: map.get("admin_gh_login_enabled") === "1",
+      uid: map.get("admin_gh_uid") ?? "",
+      login: map.get("admin_gh_login") ?? "",
+      name: map.get("admin_gh_name") ?? "",
+      avatar: map.get("admin_gh_avatar") ?? "",
+      boundAt: map.get("admin_gh_bound_at") ? Number(map.get("admin_gh_bound_at")) : 0,
+    };
+    if (legacy.clientId || legacy.secretCipher || legacy.uid) {
+      adminOauth = serializeAdminOauth({
+        github: legacy,
+        google: emptyAdminOauthProvider(),
+        microsoft: emptyAdminOauthProvider(),
+      });
+    }
   }
 
   const result: Settings = {
@@ -282,15 +377,8 @@ export async function getSettings(env: Env): Promise<Settings> {
     // 激活码浮动按钮
     codesFloatingButtonEnabled: map.get("codes_floating_button_enabled") !== "0", // 默认 true
     codesFloatingButtonPosition: (map.get("codes_floating_button_position") ?? DEFAULT_SETTINGS.codesFloatingButtonPosition) as Settings["codesFloatingButtonPosition"],
-    // 管理员 GitHub OAuth2 登录（空串一律归一化为 null，便于前端判空）
-    adminGhLoginEnabled: map.get("admin_gh_login_enabled") === "1",
-    adminGhClientId: map.get("admin_gh_client_id") ?? "",
-    adminGhClientSecretCipher: map.get("admin_gh_client_secret_cipher") || null,
-    adminGhUid: map.get("admin_gh_uid") || null,
-    adminGhLogin: map.get("admin_gh_login") || null,
-    adminGhName: map.get("admin_gh_name") || null,
-    adminGhAvatar: map.get("admin_gh_avatar") || null,
-    adminGhBoundAt: map.get("admin_gh_bound_at") ? Number(map.get("admin_gh_bound_at")) : null,
+    // 管理员第三方 OAuth2 登录
+    adminOauth,
     // 存储后端
     storageProvider: (map.get("storage_provider") ?? "r2") as Settings["storageProvider"],
     s3Endpoint: map.get("s3_endpoint") ?? null,
@@ -310,6 +398,8 @@ export async function getSettings(env: Env): Promise<Settings> {
     webdavRootPath: map.get("webdav_root_path") ?? DEFAULT_SETTINGS.webdavRootPath,
     // UI 主题
     uiTheme: (map.get("ui_theme") ?? DEFAULT_SETTINGS.uiTheme) as Settings["uiTheme"],
+    // 后台标签页自定义
+    adminTabConfig: map.get("admin_tab_config") ?? "",
   };
 
   // ② 写入内存缓存
