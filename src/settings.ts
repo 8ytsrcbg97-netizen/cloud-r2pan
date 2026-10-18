@@ -363,8 +363,10 @@ export async function addTraffic(env: Env, bytes: number): Promise<void> {
     // ② 更新 traffic_used_bytes —— 跨月逻辑完全内联在 SQL 里
     //    同月：累加旧值；跨月：从 0 开始加
     env.db.prepare(
+      // 注意：SQLite 不支持 `expr AS TEXT` 这种写法，必须用外层 CAST(... AS TEXT) 包裹整个加法表达式。
+      // 之前写成 `CAST(... AS INTEGER) + ?2 AS TEXT` 会导致 "near AS: syntax error"，使流量统计永远失败。
       `UPDATE settings SET value = CAST(
-        CASE
+        CAST(CASE
           WHEN (SELECT value FROM settings WHERE key = 'traffic_month') = ?1
           THEN COALESCE((SELECT value FROM settings WHERE key = 'traffic_used_bytes'), '0')
           ELSE '0'

@@ -1531,12 +1531,31 @@ let savedLoginKey = ''; // 第一阶段输入的 admin key
 let authMethods = { github: { enabled: false, login: null } };
 
 async function loadAuthMethods(){
+  const prevEnabled = authMethods?.github?.enabled;
   try{
     const r = await fetch('/api/admin/auth-methods', { credentials:'same-origin', cache:'no-store' });
     if(r.ok) authMethods = await r.json();
   }catch{}
-  // 若当前正停在密码登录页，用最新结果重渲染一次
-  if(document.querySelector('#login-view') && loginStage === 'password') showLogin();
+  // 仅当 GitHub 可用状态发生变化时才重渲染，避免把用户已输入的管理密钥清空
+  if(prevEnabled !== authMethods?.github?.enabled && document.querySelector('#login-view') && loginStage === 'password') showLogin();
+}
+
+/**
+ * 静默探测会话（不触发登录页重渲染，带超时）—— 启动阶段判断是否已登录。
+ * 未登录 / 请求失败 / 超时 一律返回 null，绝不抛出、绝不阻塞首屏渲染。
+ */
+async function fetchSession(timeoutMs = 8000){
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  try{
+    const r = await fetch('/api/admin/session', { credentials:'same-origin', cache:'no-store', signal: ctrl.signal });
+    if(!r.ok) return null;          // 401 等 → 未登录
+    return await r.json();
+  }catch{
+    return null;                    // 网络错误 / 超时 → 视为未登录
+  }finally{
+    clearTimeout(timer);
+  }
 }
 
 /** 处理 GitHub 登录/绑定回调带回的 query 参数提示 */
@@ -4044,17 +4063,20 @@ function showRecoveryCodes(codes){
 
 /* ═══════════ 启动 ═══════════ */
 (async () => {
-  handleGitHubRedirectParams();
-  try{
-    // 只请求一次 session，并把结果透传给 showApp，避免 showApp 内部重复请求
-    const s = await api('/api/admin/session');
-    siteTitle = s.site_title || siteTitle;
-    showApp(s);
-  }catch{
-    // 未登录：api() 内部已对 401 调用 showLogin() 并 throw，这里静默兜底即可
-    if (!document.querySelector('#login-view')) showLogin();
-    // 仅登录页需要探测可用登录方式（GitHub），已登录时无需这次请求
-    loadAuthMethods();
+  // 先处理 GitHub 回调提示（失败也不影响后续渲染）
+  try{ handleGitHubRedirectParams(); }catch{}
+  // 立即渲染登录界面：首屏不再依赖 /api/admin/session 的返回。
+  // 之前要先 await 该请求，一旦网络慢或请求卡住就会一直停留在转圈，表现为“打不开登录界面”。
+  showLogin();
+  // 并行探测可用登录方式（GitHub），到达后按需补渲染
+  loadAuthMethods();
+  // 静默探测会话：已登录则切到后台；未登录 / 失败 / 超时则保持已渲染的登录界面
+  const s = await fetchSession();
+  if (s) {
+    try{
+      siteTitle = s.site_title || siteTitle;
+      await showApp(s);
+    }catch{ /* 已登录但渲染异常时保持登录界面，不阻塞 */ }
   }
 })();
 </script>
