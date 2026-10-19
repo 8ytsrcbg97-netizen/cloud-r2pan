@@ -1,7 +1,8 @@
 import type { Env } from "./types";
-import { ensureSchema } from "./db";
+import { ensureSchema, writeErrorLog } from "./db";
+import { parseUA } from "./ua";
 import { handleAdminApi } from "./admin";
-import { handleDownload, handleDirectDownload, handleShareInfo, handleVerify } from "./public";
+import { handleDownload, handleDirectDownload, handleShareInfo, handleVerify, handlePreviewOpen, handlePreviewRaw, handlePreviewZip } from "./public";
 import { serveAdminPage, serveSharePage, serveMarketPage, errorPage } from "./pages";
 import {
   handleOAuthStart,
@@ -68,8 +69,29 @@ export default {
   async fetch(req: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     try {
       return await route(req, env, ctx);
-    } catch (err) {
+    } catch (err: any) {
       console.error("unhandled error:", err);
+      // 未捕获异常落库（错误日志），方便开发者排查
+      try {
+        const ua = req.headers.get("user-agent") ?? "";
+        const { browser, os } = parseUA(ua);
+        ctx.waitUntil(
+          writeErrorLog(env, {
+            source: "backend",
+            message: String(err?.message ?? err),
+            stack: err?.stack ?? null,
+            path: new URL(req.url).pathname,
+            url: req.url,
+            ua,
+            browser,
+            os,
+            country: req.headers.get("cf-ipcountry") ?? null,
+            ip: clientIp(req),
+          })
+        );
+      } catch {
+        /* 日志失败不影响错误页返回 */
+      }
       return errorPage(
         req,
         500,
@@ -269,6 +291,25 @@ async function route(req: Request, env: Env, ctx: ExecutionContext): Promise<Res
         return new Response("Method Not Allowed", { status: 405 });
       }
       return handleDownload(req, env, ctx, token);
+    }
+    // ── 在线预览 ──
+    //   /preview      打开预览（计次）
+    //   /preview/raw  内联流式原始文件（Range 支持）
+    //   /preview/zip  解析 ZIP 内部结构
+    if (sub === "/preview") {
+      if (req.method !== "GET" && req.method !== "HEAD") {
+        return new Response("Method Not Allowed", { status: 405 });
+      }
+      return handlePreviewOpen(req, env, token);
+    }
+    if (sub === "/preview/raw") {
+      if (req.method !== "GET" && req.method !== "HEAD") {
+        return new Response("Method Not Allowed", { status: 405 });
+      }
+      return handlePreviewRaw(req, env, ctx, token);
+    }
+    if (sub === "/preview/zip") {
+      return handlePreviewZip(req, env, token);
     }
     return notFound(req);
   }

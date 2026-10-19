@@ -670,6 +670,11 @@ const I18N = {
     downloadNameHint: '访客下载时看到的文件名，隐藏真实路径中的敏感信息。',
     maxDownloadsLabel: '下载次数上限（留空或 0 = 不限）', unlimitedPlaceholder: '不限',
     maxTip: '达到上限后链接自动失效。单 IP 重复下载限制由「设置」统一控制。',
+    maxPreviewsLabel: '在线预览次数上限（留空或 0 = 跟随全局）', maxPreviewsFollowPh: '跟随全局',
+    maxPreviewsTip: '独立于下载次数。达到上限后该分享自动停止在线预览，防止反复预览浪费流量。',
+    previewLimit: '在线预览次数上限', previewLimitD: '每个分享默认可在线预览的次数（默认 4）。设为 0 表示不限制；每个分享也可单独覆盖此值。',
+    colPreviews: '预览量',
+    showQr: '二维码', qrTitle: '扫码打开', qrHint: '用手机相机扫描二维码即可打开此链接', qrLoading: '生成中…', qrFail: '二维码生成失败',
     generate: '生成链接', shareCreated: '分享链接已创建 ✨', shareCreatedSub: '复制下面的链接发给需要的人',
     sharePageLink: '分享页（访客先看到密码/验证页）',
     directModalTitle: '创建直链', directModalSub: '生成一个拿了就能下的直链，无密码无界面',
@@ -699,6 +704,19 @@ const I18N = {
     confirmClearAllT: '清空全部记录',
     confirmClearAllD: '将删除所有下载记录（流量统计与分享下载计数不受影响）。此操作不可恢复。',
     clearedN: '已清理 {n} 条记录',
+    // 错误日志
+    tabErrorLogs: '错误日志',
+    errLogsTitle: '错误日志', errLogsSub: '前端与后端捕获到的异常会自动记录在这里，方便反馈给开发者排查。',
+    errLogsRecent: '近 24 小时 {n} 条', errLogsAllGood: '暂无报错，一切正常',
+    errLogsEmpty: '还没有错误日志', errLogsNoMatch: '没有匹配的错误',
+    errSourceAll: '全部来源', errSourceFrontend: '前端', errSourceBackend: '后端', errSourceApi: '接口',
+    errSearchPh: '搜索错误信息 / 路径…',
+    errColTime: '时间', errColSource: '来源', errColMessage: '错误信息', errColWhere: '位置', errColDevice: '设备',
+    errDetail: '详情', errContext: '上下文', errStack: '堆栈', errNoStack: '无堆栈信息',
+    errClear30: '清理 30 天前', errClearAll: '清空全部',
+    errConfirmClear30T: '清理错误日志', errConfirmClear30D: '删除 30 天前的所有错误日志，以减少存储占用。',
+    errConfirmClearAllT: '清空错误日志', errConfirmClearAllD: '将删除所有错误日志，此操作不可恢复。',
+    errClearedN: '已清理 {n} 条错误日志',
     // 封禁
     manualBan: '手动封禁 IP', ipPlaceholder: 'IP 地址，如 1.2.3.4', reasonPlaceholder: '原因（可选）', ban: '封禁',
     banTip: '重复下载超限的 IP 会被系统自动封禁（可在「设置」调整参数），此处可手动补充封禁。',
@@ -1088,6 +1106,11 @@ const I18N = {
     downloadNameHint: 'The filename visitors see when they download. Useful for hiding sensitive info in original paths.',
     maxDownloadsLabel: 'Max downloads (empty or 0 = unlimited)', unlimitedPlaceholder: 'Unlimited',
     maxTip: 'The link expires when the cap is reached. Per-IP duplicate limits are controlled in Settings.',
+    maxPreviewsLabel: 'Online preview limit (empty or 0 = follow global)', maxPreviewsFollowPh: 'Follow global',
+    maxPreviewsTip: 'Independent of download count. Online preview stops automatically once the cap is reached, preventing wasted previews.',
+    previewLimit: 'Online preview limit', previewLimitD: 'Default number of online previews per share (default 4). Set 0 for unlimited; each share can also override this.',
+    colPreviews: 'Previews',
+    showQr: 'QR Code', qrTitle: 'Scan to open', qrHint: 'Scan the QR code with your phone camera to open this link', qrLoading: 'Generating…', qrFail: 'Failed to generate QR code',
     generate: 'Generate Link', shareCreated: 'Share link created ✨', shareCreatedSub: 'Copy the link below and share it',
     sharePageLink: 'Share page (visitors see password/verification first)',
     directModalTitle: 'Create Direct Link', directModalSub: 'Generate a bare link — no page, no password, just download',
@@ -1117,6 +1140,19 @@ const I18N = {
     confirmClearAllT: 'Clear all logs',
     confirmClearAllD: 'All download logs will be deleted (traffic stats and share counters are unaffected). This cannot be undone.',
     clearedN: 'Cleared {n} logs',
+    // Error logs
+    tabErrorLogs: 'Errors',
+    errLogsTitle: 'Error Logs', errLogsSub: 'Uncaught exceptions from the frontend and backend are recorded here for developer feedback.',
+    errLogsRecent: '{n} in last 24h', errLogsAllGood: 'No errors — all good',
+    errLogsEmpty: 'No error logs yet', errLogsNoMatch: 'No matching errors',
+    errSourceAll: 'All sources', errSourceFrontend: 'Frontend', errSourceBackend: 'Backend', errSourceApi: 'API',
+    errSearchPh: 'Search message / path…',
+    errColTime: 'Time', errColSource: 'Source', errColMessage: 'Message', errColWhere: 'Where', errColDevice: 'Device',
+    errDetail: 'Details', errContext: 'Context', errStack: 'Stack', errNoStack: 'No stack trace',
+    errClear30: 'Clear 30d+', errClearAll: 'Clear all',
+    errConfirmClear30T: 'Clear error logs', errConfirmClear30D: 'Delete error logs older than 30 days to save storage.',
+    errConfirmClearAllT: 'Clear all error logs', errConfirmClearAllD: 'All error logs will be deleted. This cannot be undone.',
+    errClearedN: 'Cleared {n} error logs',
     // 封禁
     manualBan: 'Ban an IP manually', ipPlaceholder: 'IP address, e.g. 1.2.3.4', reasonPlaceholder: 'Reason (optional)', ban: 'Ban',
     banTip: 'IPs exceeding duplicate-download limits are banned automatically (configurable in Settings). You can also ban manually here.',
@@ -1531,6 +1567,36 @@ async function api(path, opts={}){
   return data;
 }
 
+/* ═══════════ 错误上报 ═══════════
+ * 捕获前端未处理异常并上报到 /api/admin/errors，写入错误日志表，
+ * 方便开发者在「错误日志」标签页查看、排查反馈。
+ * 同一错误在当前会话内只上报一次（按 来源+信息+文件+行号 去重），
+ * 并设上限，防止异常风暴刷爆日志。上报失败静默忽略。
+ */
+const _errSigs = new Set();
+function reportError(info){
+  try{
+    const sig = [info.source || 'frontend', info.message || '', info.url || '', info.line || ''].join('|');
+    if(_errSigs.has(sig) || _errSigs.size >= 40) return;
+    _errSigs.add(sig);
+    fetch('/api/admin/errors', {
+      method: 'POST', credentials: 'same-origin', keepalive: true,
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ ...info, path: info.path || (location.pathname + location.hash) }),
+    }).catch(() => {});
+  }catch(_){ /* 上报本身失败不影响页面 */ }
+}
+window.addEventListener('error', e => {
+  if(!e || !e.message) return; // 资源加载失败（img/script）没有 message，忽略
+  reportError({ source:'frontend', message: e.message, url: e.filename, line: e.lineno, col: e.colno,
+    stack: e.error && e.error.stack });
+});
+window.addEventListener('unhandledrejection', e => {
+  const r = e && e.reason;
+  const msg = r && (r.message || String(r)) ? (r.message || String(r)) : String(r);
+  reportError({ source:'frontend', message: msg, stack: (r && r.stack) || null, context: 'unhandledrejection' });
+});
+
 function toast(msg, type='ok'){
   const el = document.createElement('div');
   el.className = `toast ${type}`;
@@ -1545,6 +1611,53 @@ function copyText(text){
   ta.value = text; document.body.appendChild(ta); ta.select();
   document.execCommand('copy'); ta.remove();
   return Promise.resolve(toast(t('copied')));
+}
+
+/* 二维码：懒加载 qrcode-generator，产出可直接塞进 <img> 的 data URL */
+let _qrLibPromise = null;
+function loadQrLib(){
+  if(window.qrcode) return Promise.resolve(window.qrcode);
+  if(_qrLibPromise) return _qrLibPromise;
+  _qrLibPromise = new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = 'https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js';
+    s.async = true;
+    s.onload = () => (window.qrcode ? resolve(window.qrcode) : reject(new Error('qrcode missing')));
+    s.onerror = () => reject(new Error('qrcode load failed'));
+    document.head.appendChild(s);
+  });
+  return _qrLibPromise;
+}
+async function qrDataUrl(text){
+  const qrcode = await loadQrLib();
+  const qr = qrcode(0, 'M');
+  qr.addData(text);
+  qr.make();
+  const svg = qr.createSvgTag({ cellSize: 4, margin: 2, scalable: true });
+  return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+}
+/** 打开一个二维码弹窗 */
+function openQrModal(url){
+  const full = /^https?:\/\//.test(url) ? url : location.origin + url;
+  openModal(`
+    <h3>${esc(t('qrTitle'))}</h3>
+    <div class="sub">${esc(t('qrHint'))}</div>
+    <div style="display:flex;flex-direction:column;align-items:center;gap:12px;margin-top:16px">
+      <div id="qr-holder" style="width:200px;height:200px;border-radius:16px;background:#fff;padding:10px;display:flex;align-items:center;justify-content:center">
+        <div style="color:#888;font-size:12px">${esc(t('qrLoading'))}</div>
+      </div>
+      <div style="font-size:12px;color:var(--text-2);word-break:break-all;text-align:center;font-family:ui-monospace,'SF Mono',monospace">${esc(full)}</div>
+    </div>
+    <div class="actions">
+      <button class="btn" data-copy="${esc(full)}">${esc(t('copy'))}</button>
+      <button class="btn primary" data-x>${esc(t('close'))}</button>
+    </div>`);
+  document.querySelectorAll('[data-copy]').forEach(b => b.onclick = () => copyText(b.dataset.copy));
+  $('[data-x]').onclick = closeModal;
+  qrDataUrl(full).then(src => {
+    const h = $('#qr-holder');
+    if(h) h.innerHTML = `<img src="${src}" alt="QR" style="width:100%;height:100%;border-radius:8px">`;
+  }).catch(() => { const h = $('#qr-holder'); if(h) h.innerHTML = `<div style="color:#c00;font-size:12px">${esc(t('qrFail'))}</div>`; });
 }
 
 const confirmDialog = (title, msg, danger=true) => new Promise(resolve => {
@@ -1825,8 +1938,9 @@ const NAV_GROUPS = [
       { tab: 'direct',  label: () => t('tabDirect'),  ic: '⚡' },
     ]},
   { key: 'analytics', ic: '📈', label: () => t('navAnalytics'), subs: [
-      { tab: 'logs',   label: () => t('tabLogs'),   ic: '📋' },
-      { tab: 'global', label: () => t('tabGlobal'), ic: '🌍' },
+      { tab: 'logs',      label: () => t('tabLogs'),      ic: '📋' },
+      { tab: 'global',    label: () => t('tabGlobal'),    ic: '🌍' },
+      { tab: 'errorlogs', label: () => t('tabErrorLogs'), ic: '🐞' },
     ]},
   { key: 'security', ic: '🛡️', label: () => t('navSecurity'), subs: [
       { tab: 'bans',    label: () => t('tabBans'),    ic: '🚫' },
@@ -2018,6 +2132,7 @@ function highlightSidebar(tab){
 let currentTab = 'overview';
 let openGroup = 'overview'; // 当前展开的侧边栏分组
 let logsPage = 1, logsQuery = '';
+let errPage = 1, errQuery = '', errSource = '';
 
 async function showApp(prefetchedSession){
   loginStage = 'password'; savedLoginKey = '';
@@ -2107,7 +2222,7 @@ const TAB_LOADERS = {
   overview: loadOverview, files: loadFiles, storage: loadStorage, shares: loadShares,
   direct: loadDirectLinks, logs: loadLogs, bans: loadBans,
   global: loadGlobal, codes: loadCodes, security: loadSecurity, logins: loadAdminLogins,
-  webdav: loadWebDAV, settings: loadSettings,
+  webdav: loadWebDAV, settings: loadSettings, errorlogs: loadErrorLogs,
 };
 
 function switchTab(tab){
@@ -2306,6 +2421,11 @@ function openShareModal(fileId){
       <input type="number" id="sh-max" min="0" placeholder="${esc(t('unlimitedPlaceholder'))}">
       <div class="tip">${esc(t('maxTip'))}</div>
     </div>
+    <div class="field">
+      <label>${esc(t('maxPreviewsLabel'))}</label>
+      <input type="number" id="sh-maxpv" min="0" placeholder="${esc(t('maxPreviewsFollowPh'))}">
+      <div class="tip">${esc(t('maxPreviewsTip'))}</div>
+    </div>
     <div class="actions">
       <button class="btn" data-x>${esc(t('cancel'))}</button>
       <button class="btn primary" id="sh-create">${esc(t('generate'))}</button>
@@ -2314,10 +2434,11 @@ function openShareModal(fileId){
   $('#sh-create').onclick = async () => {
     const exp = Number($('#sh-exp').value) || null;
     const max = Number($('#sh-max').value) || null;
+    const maxpv = Number($('#sh-maxpv').value) || null;
     const password = $('#sh-pwd').value.trim() || null;
     const download_name = $('#sh-dlname').value.trim() || null;
     try{
-      const r = await api('/api/admin/shares', { method:'POST', body: JSON.stringify({ file_id: fileId, expires_hours: exp, max_downloads: max, password, download_name }) });
+      const r = await api('/api/admin/shares', { method:'POST', body: JSON.stringify({ file_id: fileId, expires_hours: exp, max_downloads: max, max_previews: maxpv, password, download_name }) });
       const url = location.origin + r.url;
       openModal(`
         <h3>${esc(t('shareCreated'))}</h3>
@@ -2334,9 +2455,11 @@ function openShareModal(fileId){
         </div>
         <div class="actions">
           <button class="btn" data-x>${esc(t('close'))}</button>
+          <button class="btn" data-qr="${esc(r.url)}">${esc(t('showQr'))}</button>
           <button class="btn primary" id="sh-open">${esc(t('preview'))}</button>
         </div>`);
       document.querySelectorAll('[data-copy]').forEach(b => b.onclick = () => copyText(b.dataset.copy));
+      document.querySelectorAll('[data-qr]').forEach(b => b.onclick = () => openQrModal(b.dataset.qr));
       $('[data-x]').onclick = closeModal;
       $('#sh-open').onclick = () => window.open(r.url, '_blank');
     }catch(e){ toast(e.message, 'err'); }
@@ -2577,7 +2700,7 @@ async function loadShares(){
         <button class="btn sm" id="cleanup-shares">${esc(t('cleanup'))}</button></div>
       ${shares.length ? `
       <div style="overflow-x:auto"><table class="tbl">
-        <thead><tr><th>${esc(t('colFile'))}</th><th>${esc(t('colLink'))}</th><th>${esc(t('passwordCol'))}</th><th>${esc(t('colDownloads'))} / ${esc(t('colExpires'))}</th><th>${esc(t('colCreated'))}</th><th>${esc(t('colExpires'))}</th><th>${esc(t('colStatus'))}</th><th style="width:80px">${esc(t('colActions'))}</th></tr></thead>
+        <thead><tr><th>${esc(t('colFile'))}</th><th>${esc(t('colLink'))}</th><th>${esc(t('passwordCol'))}</th><th>${esc(t('colDownloads'))} / ${esc(t('colExpires'))}</th><th>${esc(t('colPreviews'))}</th><th>${esc(t('colCreated'))}</th><th>${esc(t('colExpires'))}</th><th>${esc(t('colStatus'))}</th><th style="width:130px">${esc(t('colActions'))}</th></tr></thead>
         <tbody>${shares.map(s => {
           const pw = s.has_password ? (s.password_plain || '') : null;
           return `
@@ -2588,10 +2711,11 @@ async function loadShares(){
               <button class="btn sm" data-pw="${s.id}" data-val="${esc(pw)}" style="padding:2px 8px;font-size:11px;margin-left:4px">👁</button>
               <button class="btn sm" data-cpw="${esc(pw)}" style="padding:2px 8px;font-size:11px">📋</button>` : `<span style="color:var(--text-3)">—</span>`}</td>
             <td class="num">${s.download_count} / ${s.max_downloads ?? '∞'}</td>
+            <td class="num">${s.preview_count ?? 0} / ${s.max_previews ?? '∞'}</td>
             <td class="num">${fmtTime(s.created_at)}</td>
             <td class="num">${s.expires_at ? fmtTime(s.expires_at) : esc(t('forever'))}</td>
             <td><span class="tag ${s.status}"><i></i>${esc(t(STATUS_KEY[s.status]))}</span></td>
-            <td><button class="btn sm danger" data-rv="${s.id}">${esc(t('revoke'))}</button></td>
+            <td><button class="btn sm" data-qr="/s/${s.id}">QR</button> <button class="btn sm danger" data-rv="${s.id}">${esc(t('revoke'))}</button></td>
           </tr>`;
         }).join('')}
         </tbody>
@@ -2609,6 +2733,8 @@ async function loadShares(){
     toast(t('shareRevoked'));
     loadShares();
   });
+  // 二维码
+  $$('[data-qr]').forEach(b => b.onclick = () => openQrModal(b.dataset.qr));
   // 密码显示/隐藏
   $$('[data-pw]').forEach(b => {
     b.onclick = () => {
@@ -2681,6 +2807,95 @@ async function loadLogs(){
     if(!(await confirmDialog(t('confirmClearAllT'), t('confirmClearAllD')))) return;
     const r = await api('/api/admin/logs?mode=all', { method:'DELETE' });
     toast(t('clearedN', {n: r.deleted})); loadLogs();
+  };
+}
+
+/* ═══════════ 错误日志 ═══════════ */
+async function loadErrorLogs(){
+  const params = `page=${errPage}&per_page=20&q=${encodeURIComponent(errQuery)}&source=${encodeURIComponent(errSource)}`;
+  const d = await api(`/api/admin/errors?${params}`);
+  const srcMeta = {
+    frontend: { label: t('errSourceFrontend'), color: '#60a5fa' },
+    backend:  { label: t('errSourceBackend'),  color: '#f472b6' },
+    api:      { label: t('errSourceApi'),      color: '#fbbf24' },
+  };
+  const srcTag = s => {
+    const m = srcMeta[s] || { label: s || '—', color: '#94a3b8' };
+    return `<span class="tag" style="background:${m.color}22;color:${m.color};border:1px solid ${m.color}66"><i></i>${esc(m.label)}</span>`;
+  };
+  const selStyle = "padding:8px 12px;border-radius:12px;font-size:13px;font-family:inherit;color:var(--text);background:var(--sf-input);border:1px solid var(--stroke-strong);outline:none";
+  $('#view').innerHTML = `
+    <div class="glass section" style="margin-bottom:18px">
+      <div class="section-title"><h2>🐞 ${esc(t('errLogsTitle'))}（${esc(t('totalN',{n:d.total}))}）</h2>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          ${d.last_24h > 0
+            ? `<span class="tag revoked"><i></i>${esc(t('errLogsRecent',{n:d.last_24h}))}</span>`
+            : `<span class="tag active"><i></i>${esc(t('errLogsAllGood'))}</span>`}
+        </div>
+      </div>
+      <div class="sub" style="color:var(--text-2);font-size:13px;margin-bottom:12px;line-height:1.6">${esc(t('errLogsSub'))}</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <select id="err-source" style="${selStyle}">
+          <option value="" style="color:#111">${esc(t('errSourceAll'))}</option>
+          <option value="frontend" style="color:#111">${esc(t('errSourceFrontend'))}</option>
+          <option value="backend" style="color:#111">${esc(t('errSourceBackend'))}</option>
+          <option value="api" style="color:#111">${esc(t('errSourceApi'))}</option>
+        </select>
+        <input id="err-q" placeholder="${esc(t('errSearchPh'))}" value="${esc(errQuery)}"
+          style="padding:8px 14px;border-radius:12px;font-size:13px;font-family:inherit;color:var(--text);background:var(--sf-input);border:1px solid var(--stroke-strong);outline:none;flex:1;min-width:160px">
+        <button class="btn sm" id="err-clear-30">${esc(t('errClear30'))}</button>
+        <button class="btn sm danger" id="err-clear-all">${esc(t('errClearAll'))}</button>
+      </div>
+    </div>
+    <div class="glass section">
+      ${d.errors.length ? `
+      <div style="overflow-x:auto"><table class="tbl">
+        <thead><tr>
+          <th>${esc(t('errColTime'))}</th><th>${esc(t('errColSource'))}</th><th>${esc(t('errColMessage'))}</th>
+          <th>${esc(t('errColWhere'))}</th><th>${esc(t('errColDevice'))}</th>
+        </tr></thead>
+        <tbody>${d.errors.map(e => {
+          const where = (e.path || e.url || '—') + (e.line ? ':' + e.line : '');
+          return `<tr>
+            <td class="num" style="white-space:nowrap">${fmtTime(e.created_at)}</td>
+            <td>${srcTag(e.source)}</td>
+            <td class="name-cell" title="${esc(e.message)}">${esc(e.message)}</td>
+            <td class="mono" style="max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(where)}">${esc(where)}</td>
+            <td style="white-space:nowrap">${esc(e.browser || '—')} · ${esc(e.os || '—')}</td>
+          </tr>
+          <tr><td colspan="5" style="padding:0;border:0;background:transparent">
+            <details style="margin:0 0 8px">
+              <summary style="cursor:pointer;font-size:12.5px;color:var(--text-3);padding:4px 2px">${esc(t('errDetail'))} · ${esc(e.ip || '—')}${e.country ? ' · ' + esc(e.country) : ''}</summary>
+              ${e.context ? `<div class="tip" style="margin:6px 0;line-height:1.7"><b>${esc(t('errContext'))}:</b> ${esc(e.context)}</div>` : ''}
+              ${e.stack
+                ? `<pre style="white-space:pre-wrap;word-break:break-word;font-size:12px;margin:6px 0;padding:8px 10px;border-radius:10px;background:var(--sf-input);color:var(--text-2);max-height:240px;overflow:auto">${esc(e.stack)}</pre>`
+                : `<div class="tip" style="margin:6px 0">${esc(t('errNoStack'))}</div>`}
+            </details>
+          </td></tr>`;
+        }).join('')}
+        </tbody>
+      </table></div>
+      <div class="pager">
+        <button class="btn sm" id="err-pg-prev" ${d.page<=1?'disabled':''}>${esc(t('prev'))}</button>
+        <span class="info">${esc(t('pageOf',{a:d.page,b:d.pages}))}</span>
+        <button class="btn sm" id="err-pg-next" ${d.page>=d.pages?'disabled':''}>${esc(t('next'))}</button>
+      </div>` : `<div class="empty"><div class="icon">🐞</div>${esc(errQuery || errSource ? t('errLogsNoMatch') : t('errLogsEmpty'))}</div>`}
+    </div>`;
+  $('#err-source').value = errSource;
+  $('#err-source').onchange = e => { errSource = e.target.value; errPage = 1; loadErrorLogs(); };
+  let erTimer;
+  $('#err-q').oninput = e => { clearTimeout(erTimer); erTimer = setTimeout(() => { errQuery = e.target.value.trim(); errPage = 1; loadErrorLogs(); }, 350); };
+  $('#err-pg-prev')?.addEventListener('click', () => { errPage--; loadErrorLogs(); });
+  $('#err-pg-next')?.addEventListener('click', () => { errPage++; loadErrorLogs(); });
+  $('#err-clear-30').onclick = async () => {
+    if(!(await confirmDialog(t('errConfirmClear30T'), t('errConfirmClear30D'), false))) return;
+    const r = await api('/api/admin/errors?mode=older&days=30', { method:'DELETE' });
+    toast(t('errClearedN', {n: r.deleted})); loadErrorLogs();
+  };
+  $('#err-clear-all').onclick = async () => {
+    if(!(await confirmDialog(t('errConfirmClearAllT'), t('errConfirmClearAllD')))) return;
+    const r = await api('/api/admin/errors?mode=all', { method:'DELETE' });
+    toast(t('errClearedN', {n: r.deleted})); loadErrorLogs();
   };
 }
 
@@ -3140,6 +3355,8 @@ async function loadGlobal(){
   try {
     await ensureECharts();
   } catch (err) {
+    reportError({ source:'frontend', message: 'Failed to load chart library: ' + ((err && err.message) || err),
+      stack: err && err.stack, context: 'echarts-gl/missing-library' });
     $('#globe').innerHTML = `<div style="height:100%;display:flex;align-items:center;justify-content:center;color:#ef4444;font-size:14px">Failed to load chart library</div>`;
     return;
   }
@@ -3186,7 +3403,7 @@ async function loadGlobal(){
   if (globeChart) { try { globeChart.dispose(); } catch (_) {} globeChart = null; }
 
   const chart = echarts.init($('#globe'));
-  chart.setOption({
+  const globeOption = {
     backgroundColor: 'transparent',
     tooltip: {
       trigger: 'item',
@@ -3236,11 +3453,24 @@ async function loadGlobal(){
       data: globeData,
       emphasis: { itemStyle: { opacity: 1 } },
     }],
-  });
-  globeChart = chart;
-  if (window.__globeResize) window.removeEventListener('resize', window.__globeResize);
-  window.__globeResize = () => { try { chart.resize(); } catch (_) {} };
-  window.addEventListener('resize', window.__globeResize);
+  };
+  // setOption 会实例化 echarts-gl 的 ViewGL（内部用 new Function 编译 'expr(...)' 表达式）。
+  // 若 CSP 缺 'unsafe-eval' 会抛 "Invalid expression." —— 这里捕获后上报错误日志并降级提示。
+  let globeOk = true;
+  try {
+    chart.setOption(globeOption);
+  } catch (err) {
+    globeOk = false;
+    reportError({ source:'frontend', message: 'Globe render failed: ' + ((err && err.message) || err),
+      stack: err && err.stack, context: 'echarts-gl/globe' });
+    $('#globe').innerHTML = `<div style="height:100%;display:flex;align-items:center;justify-content:center;color:#ef4444;font-size:13px;padding:0 16px;text-align:center">${esc((err && err.message) || 'Chart render failed')}</div>`;
+  }
+  if (globeOk) {
+    globeChart = chart;
+    if (window.__globeResize) window.removeEventListener('resize', window.__globeResize);
+    window.__globeResize = () => { try { chart.resize(); } catch (_) {} };
+    window.addEventListener('resize', window.__globeResize);
+  }
 
   // 国家排行表格
   const rows = countries.slice(0, 20).map(c => {
@@ -3881,6 +4111,12 @@ async function loadSettings(){
     </div>
     <div class="glass group">
       <div class="row">
+        <div class="info"><div class="t">👁️ ${esc(t('previewLimit'))}</div><div class="d">${esc(t('previewLimitD'))}</div></div>
+        <input type="number" id="st-preview-limit" min="0" value="${s.preview_limit ?? 4}">
+      </div>
+    </div>
+    <div class="glass group">
+      <div class="row">
         <div class="info"><div class="t">🔁 ${esc(t('perIp'))}</div>
         <div class="d">${esc(t('perIpD'))}</div></div>
         <input type="number" id="st-perip" min="0" value="${s.max_downloads_per_ip}">
@@ -4162,6 +4398,7 @@ async function loadSettings(){
     const body = {
       site_title: $('#st-title').value.trim(),
       traffic_limit_gb: Number($('#st-limit').value) || 0,
+      preview_limit: Number($('#st-preview-limit').value) || 0,
       max_downloads_per_ip: Number($('#st-perip').value) || 0,
       count_window_hours: Number($('#st-window').value) || 0,
       auto_ban: $('#st-autoban').checked,

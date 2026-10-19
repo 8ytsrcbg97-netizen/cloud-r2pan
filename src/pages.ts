@@ -13,16 +13,26 @@ import { pickLang, type L10n } from "./i18n";
  *   - Permissions-Policy：禁用不需要的浏览器能力
  *
  * 注意：download 响应是流式的，这里的 headers 同样适用。
+ *
+ * opts.allowEval：仅管理后台需要。echarts-gl 内部 EffectCompositor 在构造 ViewGL 时
+ *   会用 new Function() 动态编译 'expr(...)' 字符串（球的每个 bloom 节点都硬编码了这种表达式），
+ *   CSP 里没有 'unsafe-eval' 时会被浏览器拦截并抛出 "Invalid expression."，导致地球仪不渲染。
+ *   —— 因此只有 /admin 页面放开 'unsafe-eval'，公开页面（share / market / error）保持严格。
  */
-export function addSecurityHeaders(headers: Headers, opts: { isDownload?: boolean } = {}): void {
+export function addSecurityHeaders(headers: Headers, opts: { isDownload?: boolean; allowEval?: boolean } = {}): void {
   // CSP —— Turnstile 需要 challenges.cloudflare.com 的 script/frame/connect
   // 'unsafe-inline' 是必要的：三个 HTML 页面都是单文件 inline JS SPA
+  // 'unsafe-eval'：仅管理页（echarts-gl 3D 地球仪需要）
+  const scriptSrc =
+    "script-src 'self' 'unsafe-inline'" +
+    (opts.allowEval ? " 'unsafe-eval'" : "") +
+    " https://challenges.cloudflare.com https://cdn.jsdelivr.net";
   const csp = opts.isDownload
     ? "default-src 'none'; style-src 'none'; script-src 'none'; frame-src 'none'; connect-src 'none'"
     : [
         "default-src 'self'",
         // ECharts + echarts-gl 从 jsdelivr CDN 加载（用于全球分布地球仪）
-        "script-src 'self' 'unsafe-inline' https://challenges.cloudflare.com https://cdn.jsdelivr.net",
+        scriptSrc,
         "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net",
         "frame-src 'self' https://challenges.cloudflare.com",
         "connect-src 'self' https://challenges.cloudflare.com https://api.github.com https://api.google.com https://graph.microsoft.com https://discord.com",
@@ -49,7 +59,8 @@ export function json(body: unknown, init?: ResponseInit): Response {
 
 export function serveAdminPage(): Response {
   const headers = new Headers({ "content-type": "text/html;charset=utf-8", "cache-control": "no-store" });
-  addSecurityHeaders(headers);
+  // 管理页需要 'unsafe-eval'：echarts-gl 3D 地球仪内部用 new Function() 编译表达式
+  addSecurityHeaders(headers, { allowEval: true });
   return new Response(adminHTML, { headers });
 }
 

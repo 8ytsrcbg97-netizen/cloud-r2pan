@@ -33,6 +33,12 @@ export interface Settings {
   trafficMonth: string;
   /** 单 IP 对同一分享的最大下载次数，0 = 不限 */
   maxDownloadsPerIp: number;
+  /**
+   * 全局「在线预览」次数上限（针对每个分享的预览次数，独立于下载次数）。
+   * 默认 4；分享级 max_previews 可覆盖（0 = 该分享不限）。
+   * 达到上限后自动停止在线预览，防止流量浪费。
+   */
+  previewLimit: number;
   /** 重复下载统计窗口（小时），0 = 永久 */
   countWindowHours: number;
   /** 超限后是否自动封禁 */
@@ -241,6 +247,7 @@ export const DEFAULT_SETTINGS: Settings = {
   trafficUsedBytes: 0,
   trafficMonth: "",
   maxDownloadsPerIp: 2,
+  previewLimit: 4,
   countWindowHours: 24,
   autoBan: true,
   banHours: 24,
@@ -352,6 +359,7 @@ export async function getSettings(env: Env): Promise<Settings> {
     trafficUsedBytes,
     trafficMonth,
     maxDownloadsPerIp: toInt(map.get("max_downloads_per_ip"), DEFAULT_SETTINGS.maxDownloadsPerIp),
+    previewLimit: toInt(map.get("preview_limit"), DEFAULT_SETTINGS.previewLimit),
     countWindowHours: toInt(map.get("count_window_hours"), DEFAULT_SETTINGS.countWindowHours),
     autoBan: (map.get("auto_ban") ?? "1") === "1",
     banHours: toInt(map.get("ban_hours"), DEFAULT_SETTINGS.banHours),

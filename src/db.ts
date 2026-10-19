@@ -28,6 +28,8 @@ const SCHEMA_STATEMENTS: string[] = [
     expires_at INTEGER,
     max_downloads INTEGER,
     download_count INTEGER NOT NULL DEFAULT 0,
+    max_previews INTEGER,
+    preview_count INTEGER NOT NULL DEFAULT 0,
     revoked INTEGER NOT NULL DEFAULT 0,
     password_hash TEXT,
     password_cipher TEXT,
@@ -160,6 +162,27 @@ const SCHEMA_STATEMENTS: string[] = [
     path TEXT PRIMARY KEY,
     created_at INTEGER NOT NULL
   )`,
+  // ═══════════ 错误日志 ═══════════
+  // 前端（含登录页）与后端捕获到的异常自动落库，方便在管理后台查看 / 反馈给开发者
+  `CREATE TABLE IF NOT EXISTS error_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    source TEXT NOT NULL,
+    message TEXT NOT NULL,
+    stack TEXT,
+    path TEXT,
+    url TEXT,
+    line INTEGER,
+    col INTEGER,
+    ua TEXT,
+    browser TEXT,
+    os TEXT,
+    country TEXT,
+    ip TEXT,
+    context TEXT,
+    created_at INTEGER NOT NULL
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_error_logs_created ON error_logs(created_at)`,
+  `CREATE INDEX IF NOT EXISTS idx_error_logs_source ON error_logs(source)`,
 ];
 
 /** 所有预期的业务表 —— 自动建表 & 升级时都要检查 */
@@ -167,7 +190,7 @@ export const EXPECTED_TABLES = [
   "files", "shares", "direct_links", "download_logs", "login_logs",
   "turnstile_visits", "banned_ips", "settings", "traffic_stats",
   "oauth_states", "oauth_providers", "activation_plans", "activation_codes",
-  "directories",
+  "directories", "error_logs",
 ];
 
 let schemaReady = false;
@@ -204,6 +227,9 @@ const MIGRATION_STATEMENTS: string[] = [
   // ═══════════ WebDAV 虚拟目录 ═══════════
   "ALTER TABLE files ADD COLUMN path TEXT NOT NULL DEFAULT '/'",
   "CREATE INDEX IF NOT EXISTS idx_files_path ON files(path)",
+  // ═══════════ 在线预览次数限制（独立于下载次数） ═══════════
+  "ALTER TABLE shares ADD COLUMN max_previews INTEGER",
+  "ALTER TABLE shares ADD COLUMN preview_count INTEGER NOT NULL DEFAULT 0",
 ];
 
 /**
@@ -297,6 +323,69 @@ export async function ensureSchema(env: Env): Promise<void> {
   schemaReady = true;
 }
 
+export interface ErrorLogInput {
+  /** frontend | backend | api */
+  source: string;
+  message: string;
+  stack?: string | null;
+  /** 页面路径或接口路径 */
+  path?: string | null;
+  /** 完整 URL 或触发脚本地址 */
+  url?: string | null;
+  line?: number | null;
+  col?: number | null;
+  ua?: string | null;
+  browser?: string | null;
+  os?: string | null;
+  country?: string | null;
+  ip?: string | null;
+  /** 额外上下文（如 'unhandledrejection' / 'echarts-gl'） */
+  context?: string | null;
+}
+
+/** 单字段最大长度，防止超长堆栈撑爆行记录 */
+function clampField(s: string | null | undefined, max: number): string | null {
+  if (s == null) return null;
+  const v = String(s);
+  if (!v) return null;
+  return v.length > max ? v.slice(0, max) : v;
+}
+
+/**
+ * 写入一条错误日志 —— 永不抛出（日志失败不影响主流程）。
+ * 表不存在时先自动建表（ensureSchema 有内存短路，成本极低）。
+ */
+export async function writeErrorLog(env: Env, e: ErrorLogInput): Promise<void> {
+  if (!env.db) return;
+  try {
+    await ensureSchema(env);
+    await env.db
+      .prepare(
+        `INSERT INTO error_logs(source, message, stack, path, url, line, col, ua, browser, os, country, ip, context, created_at)
+         VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)`
+      )
+      .bind(
+        clampField(e.source, 20) ?? "unknown",
+        clampField(e.message, 2000) ?? "(no message)",
+        clampField(e.stack, 8000),
+        clampField(e.path, 500),
+        clampField(e.url, 1000),
+        e.line ?? null,
+        e.col ?? null,
+        clampField(e.ua, 1000),
+        clampField(e.browser, 60),
+        clampField(e.os, 60),
+        clampField(e.country, 10),
+        clampField(e.ip, 64),
+        clampField(e.context, 1000),
+        Date.now()
+      )
+      .run();
+  } catch {
+    /* 静默：错误日志写入失败不能影响正常流程 */
+  }
+}
+
 /** 生成 URL 安全的随机 ID */
 export function randomId(len = 12): string {
   const alphabet = "abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -318,6 +407,8 @@ const EXPECTED_COLUMNS: { table: string; column: string }[] = [
   { table: "shares", column: "market_desc" },
   { table: "download_logs", column: "activation_code" },
   { table: "files", column: "path" },
+  { table: "shares", column: "max_previews" },
+  { table: "shares", column: "preview_count" },
 ];
 
 /** 预期的索引（同样是可能缺失的） */

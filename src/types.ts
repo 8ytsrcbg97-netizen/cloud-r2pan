@@ -24,9 +24,15 @@ export interface ShareRow {
   expires_at: number | null;
   max_downloads: number | null;
   download_count: number;
+  /** 在线预览次数上限（分享级覆盖；null = 用全局设置 preview_limit） */
+  max_previews?: number | null;
+  /** 已使用的在线预览次数 */
+  preview_count?: number;
   revoked: number;
   /** 分享访问密码哈希（salt:sha256hex），未设置则为 null */
   password_hash: string | null;
+  /** 可选下载文件名覆盖 */
+  download_name?: string | null;
   /** 是否公开到下载市场 */
   is_market?: number;
   /** 市场浏览量 */

@@ -234,6 +234,49 @@ h1 { font-size: 21px; font-weight: 700; letter-spacing: -.02em; word-break: brea
 .code-query-result.err { background: rgba(255,69,58,.12); border-color: rgba(255,69,58,.35); color: #fda293; }
 .code-progress { margin-top: 8px; height: 3px; background: rgba(255,255,255,.15); border-radius: 2px; overflow: hidden; }
 .code-progress i { display: block; height: 100%; border-radius: 2px; background: linear-gradient(90deg,#34d399,#60a5fa); }
+
+/* ═══════ 在线预览弹窗 ═══════ */
+.pv-modal {
+  width: min(760px, 94vw); max-height: 88vh; overflow: auto;
+  padding: 22px 22px 20px; border-radius: 26px; position: relative;
+  background: linear-gradient(160deg, rgba(30,28,60,.97), rgba(15,13,38,.98));
+  backdrop-filter: blur(40px) saturate(180%); -webkit-backdrop-filter: blur(40px) saturate(180%);
+  border: 1px solid rgba(255,255,255,.2);
+  box-shadow: 0 -20px 60px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.15);
+  animation: sheetUp .35s cubic-bezier(.22,1.1,.36,1) both;
+}
+.pv-modal h3 { font-size: 18px; font-weight: 700; letter-spacing: -.02em; word-break: break-all; padding-right: 30px; }
+.pv-modal .sub { font-size: 12.5px; color: rgba(255,255,255,.5); margin-top: 4px; }
+.pv-modal .close {
+  position: absolute; top: 14px; right: 14px; width: 30px; height: 30px; border-radius: 50%;
+  border: 1px solid rgba(255,255,255,.15); background: rgba(255,255,255,.06);
+  color: rgba(255,255,255,.6); cursor: pointer; font-size: 16px;
+  display: flex; align-items: center; justify-content: center; transition: all .15s;
+}
+.pv-modal .close:hover { background: rgba(255,255,255,.15); color: #fff; }
+.pv-body { margin-top: 14px; }
+.pv-body img { max-width: 100%; max-height: 64vh; border-radius: 14px; display: block; margin: 0 auto; background: rgba(0,0,0,.25); }
+.pv-body video { width: 100%; max-height: 64vh; border-radius: 14px; background: #000; display: block; }
+.pv-body audio { width: 100%; margin-top: 8px; }
+.pv-body iframe { width: 100%; height: 64vh; border: none; border-radius: 14px; background: #fff; }
+.pv-body pre {
+  max-height: 64vh; overflow: auto; white-space: pre-wrap; word-break: break-all;
+  background: rgba(0,0,0,.35); padding: 14px; border-radius: 14px;
+  font-family: ui-monospace,'SF Mono',monospace; font-size: 12.5px; line-height: 1.6; color: #e5e7eb;
+}
+.pv-meta { display: flex; justify-content: space-between; align-items: center; gap: 10px; font-size: 12.5px; color: rgba(255,255,255,.55); margin-top: 12px; flex-wrap: wrap; }
+.pv-zip-list { max-height: 62vh; overflow: auto; border-radius: 14px; background: rgba(0,0,0,.28); padding: 6px 0; }
+.pv-zip-item { display: flex; align-items: center; gap: 8px; padding: 7px 14px; font-size: 13px; color: rgba(255,255,255,.85); border-bottom: 1px solid rgba(255,255,255,.05); }
+.pv-zip-item:last-child { border-bottom: none; }
+.pv-zip-item .nm { flex: 1; word-break: break-all; }
+.pv-zip-item .sz { font-size: 11.5px; color: rgba(255,255,255,.4); font-variant-numeric: tabular-nums; }
+.pv-empty { padding: 34px 0; text-align: center; color: rgba(255,255,255,.5); font-size: 13.5px; }
+.pv-warn { margin-top: 12px; padding: 12px 14px; border-radius: 14px; font-size: 13px; line-height: 1.55;
+  background: rgba(255,159,10,.14); border: 1px solid rgba(255,159,10,.35); color: #ffd9a0; }
+/* 二维码 */
+.qr-box { display: flex; flex-direction: column; align-items: center; gap: 14px; margin-top: 14px; }
+.qr-box img { width: 208px; height: 208px; border-radius: 16px; background: #fff; padding: 12px; }
+.qr-url { font-size: 12px; color: rgba(255,255,255,.6); word-break: break-all; text-align: center; font-family: ui-monospace,'SF Mono',monospace; }
 </style>
 </head>
 <body>
@@ -316,6 +359,26 @@ const I18N = {
     codeStatusExpired: '已过期',
     codeStatusExhausted: '已耗尽',
     codeNotBound: '未绑定激活码',
+    // 在线预览
+    previewOnline: '在线预览',
+    previewRemaining: '剩余预览次数 {n} 次',
+    previewRemainingInf: '预览次数不限',
+    previewLimitReached: '预览次数已达上限（{n} 次），已停止在线预览',
+    previewTitle: '在线预览',
+    previewLoading: '正在加载预览…',
+    previewFail: '预览加载失败',
+    previewNotSupported: '该文件类型暂不支持在线预览',
+    previewTraffic: '本月流量已达限额，预览已暂停',
+    previewNeedOauth: '该分享需要登录后才能预览',
+    previewTruncated: '内容较大，仅显示开头部分',
+    zipTitle: '压缩包内容',
+    zipEmpty: '压缩包为空',
+    zipTruncated: '条目过多，仅显示前部分内容',
+    // 二维码
+    showQr: '二维码',
+    qrTitle: '扫码打开',
+    qrHint: '用手机相机扫描二维码即可打开此分享链接',
+    qrFail: '二维码加载失败',
   },
   en: {
     pageTitle: 'Share · {site}',
@@ -374,6 +437,26 @@ const I18N = {
     codeStatusExpired: 'Expired',
     codeStatusExhausted: 'Exhausted',
     codeNotBound: 'No code bound',
+    // Online preview
+    previewOnline: 'Preview',
+    previewRemaining: '{n} previews left',
+    previewRemainingInf: 'Unlimited previews',
+    previewLimitReached: 'Preview limit reached ({n}). Preview stopped.',
+    previewTitle: 'Online Preview',
+    previewLoading: 'Loading preview…',
+    previewFail: 'Failed to load preview',
+    previewNotSupported: 'This file type cannot be previewed online',
+    previewTraffic: 'Monthly traffic limit reached. Preview paused.',
+    previewNeedOauth: 'Login is required to preview this share',
+    previewTruncated: 'File is large — showing the beginning only',
+    zipTitle: 'Archive Contents',
+    zipEmpty: 'Empty archive',
+    zipTruncated: 'Too many entries — showing partial list',
+    // QR code
+    showQr: 'QR Code',
+    qrTitle: 'Scan to open',
+    qrHint: 'Scan the QR code with your phone camera to open this share',
+    qrFail: 'Failed to load QR code',
   }
 };
 
@@ -438,6 +521,22 @@ function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&l
 // 激活码绑定读写（localStorage）—— 顶层作用域，供 render / triggerDownload / wireUnlock 共用
 function getBoundCode(){ try { return localStorage.getItem('r2pan_code')?.trim().toUpperCase() || null; } catch { return null; } }
 function setBoundCode(c){ try { if(c) localStorage.setItem('r2pan_code', c.trim().toUpperCase()); else localStorage.removeItem('r2pan_code'); } catch {} }
+
+// 二维码库懒加载（qrcode-generator，按需从 jsdelivr 拉取一次并缓存）
+let _qrLibPromise = null;
+function loadQrLib(){
+  if(window.qrcode) return Promise.resolve(window.qrcode);
+  if(_qrLibPromise) return _qrLibPromise;
+  _qrLibPromise = new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = 'https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js';
+    s.async = true;
+    s.onload = () => (window.qrcode ? resolve(window.qrcode) : reject(new Error('qrcode missing')));
+    s.onerror = () => reject(new Error('qrcode load failed'));
+    document.head.appendChild(s);
+  });
+  return _qrLibPromise;
+}
 
 const token = location.pathname.split('/')[2];
 
@@ -568,6 +667,24 @@ function render(d, siteName, oauthErr, oauthProviders){
       </div>
     </div>` : '';
 
+  // ── 在线预览按钮（仅当文件类型可预览且未达预览上限时出现）──
+  const pv = d.preview || { enabled: false };
+  const pvAvailable = pv.enabled && !pv.maxed && !d.quota_exceeded;
+  const pvRemainTxt = pv.limit > 0 ? t('previewRemaining', { n: pv.remaining }) : t('previewRemainingInf');
+  const previewBlock = pvAvailable ? `
+    <a class="btn" id="pv" href="javascript:void(0)" style="margin-top:12px;background:linear-gradient(180deg,rgba(255,255,255,.16),rgba(255,255,255,.08));box-shadow:inset 0 1px 0 rgba(255,255,255,.25),0 6px 18px rgba(0,0,0,.25)">
+      <svg viewBox="0 0 24 24" fill="none"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="2"/></svg>
+      ${esc(t('previewOnline'))}
+    </a>
+    <div class="hint">${esc(pvRemainTxt)}</div>`
+    : (pv.enabled && pv.maxed ? `<div class="warn">${esc(t('previewLimitReached', { n: pv.limit }))}</div>` : '');
+
+  // ── 二维码按钮 ──
+  const qrBlock = `<button class="btn" id="qr-btn" style="margin-top:12px;background:rgba(255,255,255,.1);font-size:14px">
+      <svg viewBox="0 0 24 24" fill="none"><rect x="3" y="3" width="7" height="7" rx="1" stroke="currentColor" stroke-width="1.8"/><rect x="14" y="3" width="7" height="7" rx="1" stroke="currentColor" stroke-width="1.8"/><rect x="3" y="14" width="7" height="7" rx="1" stroke="currentColor" stroke-width="1.8"/><path d="M14 14h3v3M20 14v.01M14 20h.01M17 20h4v-3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+      ${esc(t('showQr'))}
+    </button>`;
+
   $('#app').innerHTML = `
     <div class="file-icon"><span class="ext" style="color:${extColor(d.name)}">${esc((ext||'FILE').toUpperCase())}</span></div>
     <h1>${esc(d.name)}</h1>
@@ -611,6 +728,9 @@ function render(d, siteName, oauthErr, oauthProviders){
       </a>
       ${d.direct_download_url ? `<button class="btn" id="copy-direct" style="margin-top:8px;background:rgba(255,255,255,.1);font-size:12px">📋 ${esc(t('copyDirectLink'))}</button>` : ''}
       <div class="hint">${esc(t('hint', {site: siteName}))}</div>`}
+
+    ${previewBlock}
+    ${qrBlock}
   `;
 
   // OAuth 登录/退出按钮绑定
@@ -654,6 +774,187 @@ function render(d, siteName, oauthErr, oauthProviders){
   }
 
   if(d.needs_password && $('#pw')) wireUnlock(d, ts, tsEnabled, tsOnDownload, oauthEnabled, oauthAuthed, oauthProviders);
+
+  // ═══════ 在线预览 弹窗 ═══════
+  function ensureTurnstile(){
+    if(!(tsEnabled && ts.sitekey)) return Promise.resolve(null);
+    if(!(ts.mode === 'on_download' || ts.mode === 'both')) return Promise.resolve(null);
+    if(window.__tsToken) return Promise.resolve(window.__tsToken);
+    return new Promise(resolve => {
+      const box = document.createElement('div');
+      box.style.cssText = 'margin-top:12px';
+      document.getElementById('pv-body').appendChild(box);
+      renderTurnstile(box, ts.sitekey)
+        .then(tk => { window.__tsToken = tk; box.remove(); resolve(tk); })
+        .catch(() => { box.remove(); resolve(null); });
+    });
+  }
+
+  // 在弹窗内询问密码（返回 Promise<string|null>）
+  function askPasswordInModal(){
+    return new Promise(resolve => {
+      const body = document.getElementById('pv-body');
+      body.innerHTML = `<div class="pw" style="margin-top:0">
+        <div class="pw-hint">${esc(t('protected'))}</div>
+        <input type="password" id="pv-pw" placeholder="${esc(t('passwordPlaceholder'))}" autocomplete="off">
+        <div class="err" id="pv-pw-err"></div>
+        <a class="btn" id="pv-pw-go" href="javascript:void(0)">${esc(t('unlock'))}</a>
+      </div>`;
+      const input = body.querySelector('#pv-pw');
+      setTimeout(() => input?.focus(), 80);
+      const go = () => { const v = input.value; if(v) resolve(v); };
+      body.querySelector('#pv-pw-go').onclick = go;
+      input?.addEventListener('keydown', e => { if(e.key === 'Enter'){ e.preventDefault(); go(); } });
+    });
+  }
+
+  // 密码分享：换取下载授权票据 t（复用 /verify）
+  async function resolvePasswordTicket(){
+    let pass = document.getElementById('pw')?.value || '';
+    for(let attempt = 0; attempt < 5; attempt++){
+      if(!pass){ pass = await askPasswordInModal(); if(!pass) return { aborted:true }; }
+      const body = { password: pass };
+      if(tsEnabled && ts.sitekey && ts.mode === 'both'){
+        const tk = await ensureTurnstile();
+        if(tk) body.turnstile = tk; else return { aborted:true };
+      }
+      try{
+        const r = await fetch(`/s/${token}/verify`, { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify(body) });
+        const j = await r.json().catch(() => ({}));
+        if(r.ok && j.url){
+          return { ticket: new URL(j.url, location.origin).searchParams.get('t') };
+        }
+      }catch{}
+      const errBox = document.getElementById('pv-pw-err');
+      if(errBox) errBox.textContent = t('wrongPassword');
+      pass = ''; // 重新询问
+    }
+    return { aborted:true };
+  }
+
+  async function renderPreviewText(body, meta, rawUrl){
+    try{
+      const r = await fetch(rawUrl, { headers: { 'Range': 'bytes=0-524287' }, cache:'no-store' });
+      const txt = await r.text();
+      body.innerHTML = `<pre>${esc(txt)}</pre>`;
+      if(r.status === 206) meta.innerHTML += `<span>${esc(t('previewTruncated'))}</span>`;
+    }catch{ body.innerHTML = `<div class="pv-warn">${esc(t('previewFail'))}</div>`; }
+  }
+
+  async function renderPreviewZip(body, zipUrl){
+    try{
+      const r = await fetch(zipUrl, { cache:'no-store' });
+      const j = await r.json().catch(() => ({}));
+      if(!r.ok || !j.ok){ body.innerHTML = `<div class="pv-warn">${esc(t('previewFail'))}</div>`; return; }
+      const entries = j.entries || [];
+      if(!entries.length){ body.innerHTML = `<div class="pv-empty">${esc(t('zipEmpty'))}</div>`; return; }
+      body.innerHTML = `<div class="sub" style="margin-bottom:8px">${esc(t('zipTitle'))} · ${entries.length}</div>
+        <div class="pv-zip-list">${entries.map(e => {
+          const depth = Math.max(0, e.name.replace(/\/$/, '').split('/').length - 1);
+          const leaf = e.name.replace(/\/$/, '').split('/').pop();
+          return `
+          <div class="pv-zip-item" style="padding-left:${14 + depth * 15}px">
+            <span>${e.is_dir ? '📁' : '📄'}</span>
+            <span class="nm">${esc(depth ? leaf : e.name)}</span>
+            ${e.is_dir ? '' : `<span class="sz">${esc(fmtSize(e.size))}</span>`}
+          </div>`; }).join('')}</div>
+        ${j.truncated ? `<div class="pv-warn">${esc(t('zipTruncated'))}</div>` : ''}`;
+    }catch{ body.innerHTML = `<div class="pv-warn">${esc(t('previewFail'))}</div>`; }
+  }
+
+  async function openPreview(){
+    const mask = document.createElement('div');
+    mask.className = 'code-modal-mask';
+    const modal = document.createElement('div');
+    modal.className = 'pv-modal';
+    modal.innerHTML = `
+      <h3>${esc(t('previewTitle'))}</h3>
+      <div class="sub">${esc(d.name)} · ${fmtSize(d.size)}</div>
+      <button class="close" title="Close">✕</button>
+      <div class="pv-body" id="pv-body"><div class="pv-empty">${esc(t('previewLoading'))}</div></div>
+      <div class="pv-meta" id="pv-meta"></div>`;
+    mask.appendChild(modal);
+    document.body.appendChild(mask);
+    const close = () => mask.remove();
+    modal.querySelector('.close').onclick = close;
+    mask.onclick = e => { if(e.target === mask) close(); };
+
+    const body = modal.querySelector('#pv-body');
+    const meta = modal.querySelector('#pv-meta');
+
+    // 组装门禁参数：密码票据 t / Turnstile cf / 激活码 code
+    let qs = '';
+    const addQ = kv => { qs += (qs ? '&' : '?') + kv; };
+    if(d.needs_password){
+      const res = await resolvePasswordTicket();
+      if(res.aborted){ close(); return; }
+      addQ('t=' + encodeURIComponent(res.ticket));
+    }
+    const tk = await ensureTurnstile();
+    if(tk) addQ('cf=' + encodeURIComponent(tk));
+    const code = getBoundCode();
+    if(code) addQ('code=' + encodeURIComponent(code));
+
+    // 打开一次预览（计 1 次）
+    let r, j = {};
+    try{ r = await fetch(`/s/${token}/preview${qs}`, { cache:'no-store' }); }
+    catch{ body.innerHTML = `<div class="pv-warn">${esc(t('previewFail'))}</div>`; return; }
+    try{ j = await r.json(); }catch{}
+    if(!r.ok || !j.ok){
+      let msg = t('previewFail');
+      if(j.error === 'preview_limit_reached') msg = t('previewLimitReached', { n: j.limit });
+      else if(j.error === 'traffic_exceeded') msg = t('previewTraffic');
+      else if(j.error === 'oauth_required') msg = t('previewNeedOauth');
+      else if(j.error === 'not_previewable') msg = t('previewNotSupported');
+      else if(j.error === 'turnstile_required') msg = t('turnstileFail');
+      body.innerHTML = `<div class="pv-warn">${esc(msg)}</div>`;
+      return;
+    }
+
+    meta.innerHTML = `<span>${esc(j.limit > 0 ? t('previewRemaining', { n: j.remaining }) : t('previewRemainingInf'))}</span>`;
+
+    const rawUrl = j.raw_url;
+    if(j.kind === 'image')      body.innerHTML = `<img src="${esc(rawUrl)}" alt="${esc(d.name)}">`;
+    else if(j.kind === 'video') body.innerHTML = `<video src="${esc(rawUrl)}" controls autoplay playsinline></video>`;
+    else if(j.kind === 'audio') body.innerHTML = `<audio src="${esc(rawUrl)}" controls autoplay></audio>`;
+    else if(j.kind === 'pdf')   body.innerHTML = `<iframe src="${esc(rawUrl)}" title="${esc(d.name)}"></iframe>`;
+    else if(j.kind === 'text')  await renderPreviewText(body, meta, rawUrl);
+    else if(j.kind === 'zip')   await renderPreviewZip(body, j.zip_url);
+    else body.innerHTML = `<div class="pv-warn">${esc(t('previewNotSupported'))}</div>`;
+  }
+  document.getElementById('pv')?.addEventListener('click', openPreview);
+
+  // ═══════ 二维码 弹窗 ═══════
+  function openQr(){
+    const mask = document.createElement('div');
+    mask.className = 'code-modal-mask';
+    const modal = document.createElement('div');
+    modal.className = 'pv-modal';
+    modal.style.width = 'min(360px, 92vw)';
+    modal.innerHTML = `
+      <h3>${esc(t('qrTitle'))}</h3>
+      <div class="sub">${esc(t('qrHint'))}</div>
+      <button class="close" title="Close">✕</button>
+      <div class="qr-box" id="qr-box"><div class="pv-empty">${esc(t('previewLoading'))}</div></div>
+      <div class="qr-url" id="qr-url"></div>`;
+    mask.appendChild(modal);
+    document.body.appendChild(mask);
+    const close = () => mask.remove();
+    modal.querySelector('.close').onclick = close;
+    mask.onclick = e => { if(e.target === mask) close(); };
+
+    const url = location.origin + location.pathname;
+    modal.querySelector('#qr-url').textContent = url;
+    const box = modal.querySelector('#qr-box');
+    loadQrLib().then(qrcode => {
+      const qr = qrcode(0, 'M');
+      qr.addData(url);
+      qr.make();
+      const svg = qr.createSvgTag({ cellSize: 4, margin: 2, scalable: true });
+      box.innerHTML = `<img src="data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}" alt="QR">`;
+    }).catch(() => { box.innerHTML = `<div class="pv-warn">${esc(t('qrFail'))}</div>`; });
+  }
+  document.getElementById('qr-btn')?.addEventListener('click', openQr);
 
   // ═══════ 激活码浮动按钮 & 弹窗 ═══════
   // 更新浮动按钮上的绑定状态 badge
