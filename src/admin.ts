@@ -1,5 +1,5 @@
 import type { Env } from "./types";
-import { ensureSchema, randomId, getSchemaStatus, repairDatabase } from "./db";
+import { ensureSchema, randomId, getSchemaStatus, repairDatabase, writeErrorLog } from "./db";
 import { generateCodes, makeBatchId, formatCodeStatus, findCodeByString } from "./codes";
 import { getSettings, updateSettings, parseAdminOauth, serializeAdminOauth, ADMIN_OAUTH_PROVIDER_IDS } from "./settings";
 import { checkAdminKey, createSession, verifySession, clientIp, rateLimitLogin, requireAdminIp } from "./auth";
@@ -230,6 +230,54 @@ export async function handleAdminApi(
       };
     }
     return json({ providers });
+  }
+
+  // ── 错误日志上报（公开，无需会话）─────────────────────
+  //    前端（含登录页、未登录态）发生未捕获异常时上报到这里，方便反馈给开发者。
+  //    ⚠️ 刻意放在 requireAuth 之前：登录页出错时还没有会话，也需要能记录。
+  //    防滥用：按 IP 限流（30 次/分钟）；所有字段在 writeErrorLog 内裁剪长度。
+  if (path === "/api/admin/errors" && method === "POST") {
+    const ip = clientIp(req);
+    // 用 "err:" 前缀与登录限流隔离，互不影响
+    if (!rateLimitLogin("err:" + ip, 30, 60_000)) {
+      return json({ ok: false, error: "rate_limited" }, 429);
+    }
+    const body = await readJson<{
+      message?: string;
+      stack?: string;
+      source?: string;
+      path?: string;
+      url?: string;
+      line?: number;
+      col?: number;
+      context?: string;
+    }>(req);
+    const message = String(body.message ?? "").trim();
+    if (!message) return json({ ok: false, error: "empty_message" }, 400);
+
+    const ua = req.headers.get("user-agent") ?? "";
+    const { browser, os } = parseUA(ua);
+    const num = (v: unknown) => (Number.isFinite(Number(v)) ? Number(v) : null);
+    const src = body.source === "frontend" || body.source === "backend" ? body.source : "frontend";
+
+    ctx.waitUntil(
+      writeErrorLog(env, {
+        source: src,
+        message,
+        stack: typeof body.stack === "string" ? body.stack : null,
+        path: typeof body.path === "string" ? body.path : null,
+        url: typeof body.url === "string" ? body.url : null,
+        line: num(body.line),
+        col: num(body.col),
+        ua,
+        browser,
+        os,
+        country: req.headers.get("cf-ipcountry") ?? null,
+        ip,
+        context: typeof body.context === "string" ? body.context : null,
+      })
+    );
+    return json({ ok: true });
   }
 
   // ── 以下全部需要会话 ──────────────────────────────
@@ -739,6 +787,67 @@ export async function handleAdminApi(
       binds.push(Date.now() - days * 86400_000);
     } else {
       sql = "DELETE FROM download_logs";
+    }
+    const r = await env.db.prepare(sql).bind(...binds).run();
+    return json({ ok: true, deleted: r.meta.changes ?? 0 });
+  }
+
+  // ── 错误日志（分页 + 筛选） ────────────────────────
+  if (path === "/api/admin/errors" && method === "GET") {
+    const page = Math.max(1, Number(url.searchParams.get("page")) || 1);
+    const perPage = Math.min(100, Math.max(10, Number(url.searchParams.get("per_page")) || 20));
+    const q = url.searchParams.get("q")?.trim();
+    const source = url.searchParams.get("source")?.trim();
+    const where: string[] = [];
+    const binds: (string | number)[] = [];
+    let idx = 1;
+    if (q) {
+      where.push(`(message LIKE ?${idx} OR context LIKE ?${idx} OR path LIKE ?${idx})`);
+      binds.push(`%${q}%`);
+      idx++;
+    }
+    if (source) {
+      where.push(`source = ?${idx}`);
+      binds.push(source);
+      idx++;
+    }
+    const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
+    const [total, rows] = await Promise.all([
+      env.db.prepare(`SELECT COUNT(*) AS c FROM error_logs ${whereSql}`).bind(...binds).first<{ c: number }>(),
+      env.db
+        .prepare(
+          `SELECT id, source, message, stack, path, url, line, col, browser, os, country, ip, context, created_at
+           FROM error_logs ${whereSql} ORDER BY id DESC LIMIT ?${idx} OFFSET ?${idx + 1}`
+        )
+        .bind(...binds, perPage, (page - 1) * perPage)
+        .all(),
+    ]);
+    // 统计：最近 24h 报错数（给前端做红色告警）
+    const last24h = await env.db
+      .prepare("SELECT COUNT(*) AS c FROM error_logs WHERE created_at >= ?1")
+      .bind(Date.now() - 24 * 3600_000)
+      .first<{ c: number }>();
+    return json({
+      errors: rows.results ?? [],
+      total: total?.c ?? 0,
+      page,
+      per_page: perPage,
+      pages: Math.max(1, Math.ceil((total?.c ?? 0) / perPage)),
+      last_24h: last24h?.c ?? 0,
+    });
+  }
+
+  // ── 清除错误日志（全部 / N 天前） ──────────────────
+  if (path === "/api/admin/errors" && method === "DELETE") {
+    const mode = url.searchParams.get("mode") ?? "all";
+    let sql: string;
+    const binds: number[] = [];
+    if (mode === "older") {
+      const days = Math.max(1, Number(url.searchParams.get("days")) || 30);
+      sql = "DELETE FROM error_logs WHERE created_at < ?1";
+      binds.push(Date.now() - days * 86400_000);
+    } else {
+      sql = "DELETE FROM error_logs";
     }
     const r = await env.db.prepare(sql).bind(...binds).run();
     return json({ ok: true, deleted: r.meta.changes ?? 0 });
@@ -1953,6 +2062,23 @@ export async function handleAdminApi(
   return json({ error: "not_found" }, 404);
   } catch (e: any) {
     console.error("[handleAdminApi]", e?.stack || e);
+    // 顺带把 API 异常落到错误日志表，方便管理员在后台查看 / 反馈
+    const ua = req.headers.get("user-agent") ?? "";
+    const { browser, os } = parseUA(ua);
+    ctx.waitUntil(
+      writeErrorLog(env, {
+        source: "api",
+        message: String(e?.message ?? e),
+        stack: e?.stack ?? null,
+        path,
+        url: req.url,
+        ua,
+        browser,
+        os,
+        country: req.headers.get("cf-ipcountry") ?? null,
+        ip: clientIp(req),
+      })
+    );
     return json({
       error: "server_error",
       message: String(e?.message ?? e),

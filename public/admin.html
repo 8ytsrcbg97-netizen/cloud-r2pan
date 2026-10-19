@@ -704,6 +704,19 @@ const I18N = {
     confirmClearAllT: '清空全部记录',
     confirmClearAllD: '将删除所有下载记录（流量统计与分享下载计数不受影响）。此操作不可恢复。',
     clearedN: '已清理 {n} 条记录',
+    // 错误日志
+    tabErrorLogs: '错误日志',
+    errLogsTitle: '错误日志', errLogsSub: '前端与后端捕获到的异常会自动记录在这里，方便反馈给开发者排查。',
+    errLogsRecent: '近 24 小时 {n} 条', errLogsAllGood: '暂无报错，一切正常',
+    errLogsEmpty: '还没有错误日志', errLogsNoMatch: '没有匹配的错误',
+    errSourceAll: '全部来源', errSourceFrontend: '前端', errSourceBackend: '后端', errSourceApi: '接口',
+    errSearchPh: '搜索错误信息 / 路径…',
+    errColTime: '时间', errColSource: '来源', errColMessage: '错误信息', errColWhere: '位置', errColDevice: '设备',
+    errDetail: '详情', errContext: '上下文', errStack: '堆栈', errNoStack: '无堆栈信息',
+    errClear30: '清理 30 天前', errClearAll: '清空全部',
+    errConfirmClear30T: '清理错误日志', errConfirmClear30D: '删除 30 天前的所有错误日志，以减少存储占用。',
+    errConfirmClearAllT: '清空错误日志', errConfirmClearAllD: '将删除所有错误日志，此操作不可恢复。',
+    errClearedN: '已清理 {n} 条错误日志',
     // 封禁
     manualBan: '手动封禁 IP', ipPlaceholder: 'IP 地址，如 1.2.3.4', reasonPlaceholder: '原因（可选）', ban: '封禁',
     banTip: '重复下载超限的 IP 会被系统自动封禁（可在「设置」调整参数），此处可手动补充封禁。',
@@ -1127,6 +1140,19 @@ const I18N = {
     confirmClearAllT: 'Clear all logs',
     confirmClearAllD: 'All download logs will be deleted (traffic stats and share counters are unaffected). This cannot be undone.',
     clearedN: 'Cleared {n} logs',
+    // Error logs
+    tabErrorLogs: 'Errors',
+    errLogsTitle: 'Error Logs', errLogsSub: 'Uncaught exceptions from the frontend and backend are recorded here for developer feedback.',
+    errLogsRecent: '{n} in last 24h', errLogsAllGood: 'No errors — all good',
+    errLogsEmpty: 'No error logs yet', errLogsNoMatch: 'No matching errors',
+    errSourceAll: 'All sources', errSourceFrontend: 'Frontend', errSourceBackend: 'Backend', errSourceApi: 'API',
+    errSearchPh: 'Search message / path…',
+    errColTime: 'Time', errColSource: 'Source', errColMessage: 'Message', errColWhere: 'Where', errColDevice: 'Device',
+    errDetail: 'Details', errContext: 'Context', errStack: 'Stack', errNoStack: 'No stack trace',
+    errClear30: 'Clear 30d+', errClearAll: 'Clear all',
+    errConfirmClear30T: 'Clear error logs', errConfirmClear30D: 'Delete error logs older than 30 days to save storage.',
+    errConfirmClearAllT: 'Clear all error logs', errConfirmClearAllD: 'All error logs will be deleted. This cannot be undone.',
+    errClearedN: 'Cleared {n} error logs',
     // 封禁
     manualBan: 'Ban an IP manually', ipPlaceholder: 'IP address, e.g. 1.2.3.4', reasonPlaceholder: 'Reason (optional)', ban: 'Ban',
     banTip: 'IPs exceeding duplicate-download limits are banned automatically (configurable in Settings). You can also ban manually here.',
@@ -1541,6 +1567,36 @@ async function api(path, opts={}){
   return data;
 }
 
+/* ═══════════ 错误上报 ═══════════
+ * 捕获前端未处理异常并上报到 /api/admin/errors，写入错误日志表，
+ * 方便开发者在「错误日志」标签页查看、排查反馈。
+ * 同一错误在当前会话内只上报一次（按 来源+信息+文件+行号 去重），
+ * 并设上限，防止异常风暴刷爆日志。上报失败静默忽略。
+ */
+const _errSigs = new Set();
+function reportError(info){
+  try{
+    const sig = [info.source || 'frontend', info.message || '', info.url || '', info.line || ''].join('|');
+    if(_errSigs.has(sig) || _errSigs.size >= 40) return;
+    _errSigs.add(sig);
+    fetch('/api/admin/errors', {
+      method: 'POST', credentials: 'same-origin', keepalive: true,
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ ...info, path: info.path || (location.pathname + location.hash) }),
+    }).catch(() => {});
+  }catch(_){ /* 上报本身失败不影响页面 */ }
+}
+window.addEventListener('error', e => {
+  if(!e || !e.message) return; // 资源加载失败（img/script）没有 message，忽略
+  reportError({ source:'frontend', message: e.message, url: e.filename, line: e.lineno, col: e.colno,
+    stack: e.error && e.error.stack });
+});
+window.addEventListener('unhandledrejection', e => {
+  const r = e && e.reason;
+  const msg = r && (r.message || String(r)) ? (r.message || String(r)) : String(r);
+  reportError({ source:'frontend', message: msg, stack: (r && r.stack) || null, context: 'unhandledrejection' });
+});
+
 function toast(msg, type='ok'){
   const el = document.createElement('div');
   el.className = `toast ${type}`;
@@ -1882,8 +1938,9 @@ const NAV_GROUPS = [
       { tab: 'direct',  label: () => t('tabDirect'),  ic: '⚡' },
     ]},
   { key: 'analytics', ic: '📈', label: () => t('navAnalytics'), subs: [
-      { tab: 'logs',   label: () => t('tabLogs'),   ic: '📋' },
-      { tab: 'global', label: () => t('tabGlobal'), ic: '🌍' },
+      { tab: 'logs',      label: () => t('tabLogs'),      ic: '📋' },
+      { tab: 'global',    label: () => t('tabGlobal'),    ic: '🌍' },
+      { tab: 'errorlogs', label: () => t('tabErrorLogs'), ic: '🐞' },
     ]},
   { key: 'security', ic: '🛡️', label: () => t('navSecurity'), subs: [
       { tab: 'bans',    label: () => t('tabBans'),    ic: '🚫' },
@@ -2075,6 +2132,7 @@ function highlightSidebar(tab){
 let currentTab = 'overview';
 let openGroup = 'overview'; // 当前展开的侧边栏分组
 let logsPage = 1, logsQuery = '';
+let errPage = 1, errQuery = '', errSource = '';
 
 async function showApp(prefetchedSession){
   loginStage = 'password'; savedLoginKey = '';
@@ -2164,7 +2222,7 @@ const TAB_LOADERS = {
   overview: loadOverview, files: loadFiles, storage: loadStorage, shares: loadShares,
   direct: loadDirectLinks, logs: loadLogs, bans: loadBans,
   global: loadGlobal, codes: loadCodes, security: loadSecurity, logins: loadAdminLogins,
-  webdav: loadWebDAV, settings: loadSettings,
+  webdav: loadWebDAV, settings: loadSettings, errorlogs: loadErrorLogs,
 };
 
 function switchTab(tab){
@@ -2752,6 +2810,95 @@ async function loadLogs(){
   };
 }
 
+/* ═══════════ 错误日志 ═══════════ */
+async function loadErrorLogs(){
+  const params = `page=${errPage}&per_page=20&q=${encodeURIComponent(errQuery)}&source=${encodeURIComponent(errSource)}`;
+  const d = await api(`/api/admin/errors?${params}`);
+  const srcMeta = {
+    frontend: { label: t('errSourceFrontend'), color: '#60a5fa' },
+    backend:  { label: t('errSourceBackend'),  color: '#f472b6' },
+    api:      { label: t('errSourceApi'),      color: '#fbbf24' },
+  };
+  const srcTag = s => {
+    const m = srcMeta[s] || { label: s || '—', color: '#94a3b8' };
+    return `<span class="tag" style="background:${m.color}22;color:${m.color};border:1px solid ${m.color}66"><i></i>${esc(m.label)}</span>`;
+  };
+  const selStyle = "padding:8px 12px;border-radius:12px;font-size:13px;font-family:inherit;color:var(--text);background:var(--sf-input);border:1px solid var(--stroke-strong);outline:none";
+  $('#view').innerHTML = `
+    <div class="glass section" style="margin-bottom:18px">
+      <div class="section-title"><h2>🐞 ${esc(t('errLogsTitle'))}（${esc(t('totalN',{n:d.total}))}）</h2>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          ${d.last_24h > 0
+            ? `<span class="tag revoked"><i></i>${esc(t('errLogsRecent',{n:d.last_24h}))}</span>`
+            : `<span class="tag active"><i></i>${esc(t('errLogsAllGood'))}</span>`}
+        </div>
+      </div>
+      <div class="sub" style="color:var(--text-2);font-size:13px;margin-bottom:12px;line-height:1.6">${esc(t('errLogsSub'))}</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <select id="err-source" style="${selStyle}">
+          <option value="" style="color:#111">${esc(t('errSourceAll'))}</option>
+          <option value="frontend" style="color:#111">${esc(t('errSourceFrontend'))}</option>
+          <option value="backend" style="color:#111">${esc(t('errSourceBackend'))}</option>
+          <option value="api" style="color:#111">${esc(t('errSourceApi'))}</option>
+        </select>
+        <input id="err-q" placeholder="${esc(t('errSearchPh'))}" value="${esc(errQuery)}"
+          style="padding:8px 14px;border-radius:12px;font-size:13px;font-family:inherit;color:var(--text);background:var(--sf-input);border:1px solid var(--stroke-strong);outline:none;flex:1;min-width:160px">
+        <button class="btn sm" id="err-clear-30">${esc(t('errClear30'))}</button>
+        <button class="btn sm danger" id="err-clear-all">${esc(t('errClearAll'))}</button>
+      </div>
+    </div>
+    <div class="glass section">
+      ${d.errors.length ? `
+      <div style="overflow-x:auto"><table class="tbl">
+        <thead><tr>
+          <th>${esc(t('errColTime'))}</th><th>${esc(t('errColSource'))}</th><th>${esc(t('errColMessage'))}</th>
+          <th>${esc(t('errColWhere'))}</th><th>${esc(t('errColDevice'))}</th>
+        </tr></thead>
+        <tbody>${d.errors.map(e => {
+          const where = (e.path || e.url || '—') + (e.line ? ':' + e.line : '');
+          return `<tr>
+            <td class="num" style="white-space:nowrap">${fmtTime(e.created_at)}</td>
+            <td>${srcTag(e.source)}</td>
+            <td class="name-cell" title="${esc(e.message)}">${esc(e.message)}</td>
+            <td class="mono" style="max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(where)}">${esc(where)}</td>
+            <td style="white-space:nowrap">${esc(e.browser || '—')} · ${esc(e.os || '—')}</td>
+          </tr>
+          <tr><td colspan="5" style="padding:0;border:0;background:transparent">
+            <details style="margin:0 0 8px">
+              <summary style="cursor:pointer;font-size:12.5px;color:var(--text-3);padding:4px 2px">${esc(t('errDetail'))} · ${esc(e.ip || '—')}${e.country ? ' · ' + esc(e.country) : ''}</summary>
+              ${e.context ? `<div class="tip" style="margin:6px 0;line-height:1.7"><b>${esc(t('errContext'))}:</b> ${esc(e.context)}</div>` : ''}
+              ${e.stack
+                ? `<pre style="white-space:pre-wrap;word-break:break-word;font-size:12px;margin:6px 0;padding:8px 10px;border-radius:10px;background:var(--sf-input);color:var(--text-2);max-height:240px;overflow:auto">${esc(e.stack)}</pre>`
+                : `<div class="tip" style="margin:6px 0">${esc(t('errNoStack'))}</div>`}
+            </details>
+          </td></tr>`;
+        }).join('')}
+        </tbody>
+      </table></div>
+      <div class="pager">
+        <button class="btn sm" id="err-pg-prev" ${d.page<=1?'disabled':''}>${esc(t('prev'))}</button>
+        <span class="info">${esc(t('pageOf',{a:d.page,b:d.pages}))}</span>
+        <button class="btn sm" id="err-pg-next" ${d.page>=d.pages?'disabled':''}>${esc(t('next'))}</button>
+      </div>` : `<div class="empty"><div class="icon">🐞</div>${esc(errQuery || errSource ? t('errLogsNoMatch') : t('errLogsEmpty'))}</div>`}
+    </div>`;
+  $('#err-source').value = errSource;
+  $('#err-source').onchange = e => { errSource = e.target.value; errPage = 1; loadErrorLogs(); };
+  let erTimer;
+  $('#err-q').oninput = e => { clearTimeout(erTimer); erTimer = setTimeout(() => { errQuery = e.target.value.trim(); errPage = 1; loadErrorLogs(); }, 350); };
+  $('#err-pg-prev')?.addEventListener('click', () => { errPage--; loadErrorLogs(); });
+  $('#err-pg-next')?.addEventListener('click', () => { errPage++; loadErrorLogs(); });
+  $('#err-clear-30').onclick = async () => {
+    if(!(await confirmDialog(t('errConfirmClear30T'), t('errConfirmClear30D'), false))) return;
+    const r = await api('/api/admin/errors?mode=older&days=30', { method:'DELETE' });
+    toast(t('errClearedN', {n: r.deleted})); loadErrorLogs();
+  };
+  $('#err-clear-all').onclick = async () => {
+    if(!(await confirmDialog(t('errConfirmClearAllT'), t('errConfirmClearAllD')))) return;
+    const r = await api('/api/admin/errors?mode=all', { method:'DELETE' });
+    toast(t('errClearedN', {n: r.deleted})); loadErrorLogs();
+  };
+}
+
 /* ═══════════ 直链 ═══════════ */
 async function loadDirectLinks(){
   const { direct_links } = await api('/api/admin/direct-links');
@@ -3208,6 +3355,8 @@ async function loadGlobal(){
   try {
     await ensureECharts();
   } catch (err) {
+    reportError({ source:'frontend', message: 'Failed to load chart library: ' + ((err && err.message) || err),
+      stack: err && err.stack, context: 'echarts-gl/missing-library' });
     $('#globe').innerHTML = `<div style="height:100%;display:flex;align-items:center;justify-content:center;color:#ef4444;font-size:14px">Failed to load chart library</div>`;
     return;
   }
@@ -3254,7 +3403,7 @@ async function loadGlobal(){
   if (globeChart) { try { globeChart.dispose(); } catch (_) {} globeChart = null; }
 
   const chart = echarts.init($('#globe'));
-  chart.setOption({
+  const globeOption = {
     backgroundColor: 'transparent',
     tooltip: {
       trigger: 'item',
@@ -3304,11 +3453,24 @@ async function loadGlobal(){
       data: globeData,
       emphasis: { itemStyle: { opacity: 1 } },
     }],
-  });
-  globeChart = chart;
-  if (window.__globeResize) window.removeEventListener('resize', window.__globeResize);
-  window.__globeResize = () => { try { chart.resize(); } catch (_) {} };
-  window.addEventListener('resize', window.__globeResize);
+  };
+  // setOption 会实例化 echarts-gl 的 ViewGL（内部用 new Function 编译 'expr(...)' 表达式）。
+  // 若 CSP 缺 'unsafe-eval' 会抛 "Invalid expression." —— 这里捕获后上报错误日志并降级提示。
+  let globeOk = true;
+  try {
+    chart.setOption(globeOption);
+  } catch (err) {
+    globeOk = false;
+    reportError({ source:'frontend', message: 'Globe render failed: ' + ((err && err.message) || err),
+      stack: err && err.stack, context: 'echarts-gl/globe' });
+    $('#globe').innerHTML = `<div style="height:100%;display:flex;align-items:center;justify-content:center;color:#ef4444;font-size:13px;padding:0 16px;text-align:center">${esc((err && err.message) || 'Chart render failed')}</div>`;
+  }
+  if (globeOk) {
+    globeChart = chart;
+    if (window.__globeResize) window.removeEventListener('resize', window.__globeResize);
+    window.__globeResize = () => { try { chart.resize(); } catch (_) {} };
+    window.addEventListener('resize', window.__globeResize);
+  }
 
   // 国家排行表格
   const rows = countries.slice(0, 20).map(c => {
